@@ -1,0 +1,16 @@
+[book]
+title = "Kyronix Documentation"
+authors = ["Kyronix Project"]
+language = "en"
+src = "."
+
+[build]
+build-dir = "book"
+
+#[preprocessor.admonish]
+#command = "mdbook-admonish"
+
+[output.html]
+default-theme = "coal"
+preferred-dark-theme = "coal"
+#additional-css = ["./mdbook-admonish.css"]
