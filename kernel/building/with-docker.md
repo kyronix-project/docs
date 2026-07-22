@@ -1,48 +1,47 @@
-# Building with Docker/Podman
+# Building with Docker or Podman
 
-Kyronix supports building inside a Docker or Podman container for a fully reproducible environment.
+This document describes how to build the Kyronix kernel inside a Docker or Podman container. This is the recommended method for reproducible builds.
 
-## Prerequisites
+## Overview
 
-1. Install Docker or Podman on your host system.
-2. Ensure your user has permission to run containers (e.g., membership in the `docker` group).
+The containerized build uses the `Containerfile` at the repository root, based on Alpine Linux 3.20. The container image includes all required build dependencies: `gcc`, `make`, `binutils`, `nasm`, `bison`, `flex`, `cpio`, `e2fsprogs`, `xorriso`, and others.
 
-## Build Steps
+## Usage
 
-1. Clone the repository and enter the source directory:
-
-```bash
-git clone https://github.com/kyronix-project/kyronix.git
-cd kyronix
-```
-
-2. Build and run using Podman (or replace `podman` with `docker`):
+1. Build any target with the `CRUNTIME` variable set:
 
 ```bash
-make all CRUNTIME=podman
+make iso CRUNTIME=podman
+make all CRUNTIME=docker
 ```
 
-This will:
+2. The Makefile automatically builds the container image from `Containerfile` if it does not exist or if the `Containerfile` has been modified since the image was last built.
 
-1. Build the container image from the `Containerfile` (Alpine 3.20 base).
-2. Mount the source directory into the container.
-3. Run the full build inside the container.
+3. The source tree is mounted at `/src` inside the container. All build artifacts are written to the host filesystem.
 
-3. The build output will be placed in `dist/kernel.elf` and `build/bin/`.
+## Supported Runtimes
+
+| Runtime | Variable | Default |
+|---|---|---|
+| Podman | `CRUNTIME=podman` | Yes (default in Makefile) |
+| Docker | `CRUNTIME=docker` | No |
 
 ## Container Image
 
-The `Containerfile` defines the build environment:
-
-- Base image: Alpine 3.20
-- Toolchain: `musl-gcc`, `nasm`, `xorriso`
-- Testing: `qemu-system-x86_64`
-
-> **Important:** If the `Containerfile` changes, the container image will be automatically rebuilt on the next `make` invocation.
-
-## Running Tests in the Container
+The image is tagged `kyronix-build:latest` by default. Override via `CONTAINER_IMAGE` and `CONTAINER_IMAGE_TAG` variables.
 
 ```bash
-make test-iso CRUNTIME=podman
-make test-run-log CRUNTIME=podman
+make iso CRUNTIME=docker CONTAINER_IMAGE=custom-build CONTAINER_IMAGE_TAG=v1
 ```
+
+## Cleanup
+
+```bash
+make clean CRUNTIME=podman
+```
+
+This removes the `dist/`, `build/`, and `iso_root/` directories on the host, plus rebuilds the container image on the next build.
+
+NOTE: The container image is cached between builds. Only rebuilds when `Containerfile` changes.
+
+Last reviewed: 2026-07-22

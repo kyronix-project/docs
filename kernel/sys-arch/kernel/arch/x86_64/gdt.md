@@ -1,50 +1,69 @@
 # GDT
 
-This document describes the Global Descriptor Table (GDT) setup in the Kyronix kernel.
+This document describes the Global Descriptor Table (GDT) implementation in the Kyronix kernel. It is the child of [x86-64 Architecture](sys-arch/kernel/arch/x86_64/index.md).
+
+## Source
+
+`kernel/arch/x86_64/gdt.c`
 
 ## Overview
 
-The GDT defines memory segments for kernel and user mode. Kyronix uses flat-model 64-bit segments (base=0, limit=max) as is standard for x86-64 long mode.
+The GDT provides segment descriptors for kernel and user code/data, plus per-CPU Task State Segment (TSS) descriptors. In long mode, segments are mostly flat (base=0, limit=4 GiB), but the TSS is essential for interrupt stack switching and I/O permission bitmap.
 
-## GDT Layout
+## GDT Structure
 
-| Selector | Name | Description |
-|----------|------|-------------|
-| 0x00 | Null | Null descriptor (required) |
-| 0x08 | Kernel Code | 64-bit ring 0, execute/read |
-| 0x10 | Kernel Data | 64-bit ring 0, read/write |
-| 0x18 | User Data | 64-bit ring 3, read/write |
-| 0x20 | User Code | 64-bit ring 3, execute/read |
-| 0x28+ | TSS | Task State Segments (one per CPU, 16 bytes each) |
+```c
+typedef struct {
+    gdt_entry_t entries[5];         // null, kcode, kdata, udata, ucode
+    tss_desc_t  tss[MAX_CPUS];     // one TSS descriptor per CPU
+} gdt_t;  // aligned(16)
+```
 
-## Segment Descriptors
+## Segment Values
 
-Hardcoded 64-bit segment descriptors:
+| Entry | Selector | Encoded Value | Meaning |
+|---|---|---|---|
+| Kernel code | `0x08` | `0x00AF9A000000FFFF` | 64-bit, ring 0, executable, readable |
+| Kernel data | `0x10` | `0x00CF92000000FFFF` | 64-bit, ring 0, writable |
+| User data | `0x18` | `0x00CFF2000000FFFF` | 64-bit, ring 3, writable |
+| User code | `0x20` | `0x00AFFA000000FFFF` | 64-bit, ring 3, executable, readable |
 
-- Kernel Code: `0x00AF9A000000FFFF` -- present, 64-bit, ring 0, execute/read
-- Kernel Data: `0x00CF92000000FFFF` -- present, 64-bit, ring 0, read/write
-- User Data: `0x00CFF2000000FFFF` -- present, 64-bit, ring 3, read/write
-- User Code: `0x00AFFA000000FFFF` -- present, 64-bit, ring 3, execute/read
+## TSS Structure
 
-## Task State Segment (TSS)
+The TSS (104 bytes on x86-64) provides:
 
-One TSS per CPU. Contains:
+- **rsp0**: Ring 0 stack pointer, used on privilege level transitions (interrupts from ring 3)
+- **ist[7]**: Interrupt Stack Table entries for critical handlers (Double Fault, NMI)
+- **iopb_offset**: Offset to I/O permission bitmap
 
-- `rsp0` -- kernel stack pointer for ring-3 transitions (set via `gdt_set_kernel_stack`)
-- `ist[0]` -- Double Fault IST stack (16384 bytes)
-- `ist[1]` -- NMI IST stack (16384 bytes)
+```c
+typedef struct {
+    uint32_t reserved0;
+    uint64_t rsp0, rsp1, rsp2;
+    uint64_t reserved1;
+    uint64_t ist[7];
+    uint64_t reserved2;
+    uint16_t reserved3;
+    uint16_t iopb_offset;  // = sizeof(tss_t)
+} tss_t;  // 104 bytes, packed
+```
 
-## Initialization
+## Key Functions
 
-`gdt_init()` performs the following steps:
+| Function | Description |
+|---|---|
+| `gdt_init()` | Initialize GDT, BSP TSS, load GDT and TSS on BSP |
+| `gdt_ap_load(cpu_id)` | Load GDT and TSS on an Application Processor |
+| `gdt_set_kernel_stack(rsp0)` | Update TSS rsp0 for the current CPU |
+| `tss_init(tss)` | Initialize TSS fields (IST stacks, IOPB offset) |
 
-1. Populate GDT entries (null, kernel code/data, user code/data, TSS for BSP)
-2. Load GDT via `lgdt`
-3. Far jump to reload CS with selector 0x08
-4. Load DS/ES/SS with 0x10 (kernel data)
-5. Zero FS/GS
-6. Load TSS via `ltr`
+## IST Stacks
 
-## Per-CPU Setup
+| IST Index | Stack | Size | Assigned To |
+|---|---|---|---|
+| 1 | `g_ist_df` | 16 KiB | Double Fault (#8) |
+| 2 | `g_ist_nmi` | 16 KiB | NMI (vector 2) |
 
-`gdt_ap_load(cpu_id)` creates per-CPU TSS entries and reloads GDT+TSS for Application Processors. Each CPU gets its own TSS with a dedicated double-fault and NMI IST stack.
+NOTE: IST stacks provide dedicated, non-overflowable stacks for the most critical exceptions, preventing kernel stack corruption during Double Faults.
+
+Last reviewed: 2026-07-22

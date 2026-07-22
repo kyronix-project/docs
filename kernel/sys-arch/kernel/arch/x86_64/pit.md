@@ -1,45 +1,51 @@
 # PIT
 
-This document describes the Programmable Interval Timer (PIT) driver in the Kyronix kernel.
+This document describes the Programmable Interval Timer (PIT) implementation in the Kyronix kernel. It is the child of [x86-64 Architecture](sys-arch/kernel/arch/x86_64/index.md).
+
+## Source
+
+`kernel/arch/x86_64/pit.c`
 
 ## Overview
 
-The PIT is an x86 timer device based on the 8253/8254 chip. It provides a fixed-frequency periodic interrupt used for timekeeping and as a reference for LAPIC timer calibration.
+The PIT provides the system tick source via channel 0. The CMOS Real-Time Clock (RTC) is read at boot to establish a Unix epoch base time.
 
-## Configuration
+## PIT Configuration
 
-- **Channel:** 0
-- **Mode:** 3 (square wave generator)
-- **Frequency:** ~250 Hz (divisor 4772, base oscillator 1,193,182 Hz)
-- **IRQ:** 0 (mapped to PIC IRQ 0, vector 32)
+| Setting | Value |
+|---|---|
+| Channel | 0 |
+| Mode | Square wave (mode 3) |
+| Reload value | 4772 |
+| Frequency | `1193182 / 4772 = ~250.06 Hz` |
+| Tick interval | ~4 ms |
 
-## Initialization
+## Key Functions
 
-`pit_init()` performs:
+| Function | Description |
+|---|---|
+| `pit_init()` | Program PIT channel 0, read RTC epoch, unmask PIC IRQ 0 |
+| `pit_read_counter()` | Latch and read PIT channel 0 counter (used during LAPIC calibration) |
 
-1. Program PIT Channel 0 with mode 0x36 (channel 0, lobyte/hibyte, square wave)
-2. Read the CMOS RTC to obtain the current epoch time
-3. Unmask IRQ 0 on the PIC
+## RTC Reading
 
-## Tick Counter
+The CMOS RTC is read at boot to obtain the current date/time:
 
-A global volatile counter `g_ticks` is incremented on each IRQ 0. This counter serves as the kernel's monotonic time reference.
+1. Wait for UIP (Update In Progress) flag to clear (CMOS register 0x0A, bit 7)
+2. Read seconds, minutes, hours, day, month, year, century from CMOS registers
+3. Convert BCD to binary if needed (Status Register B, bit 2)
+4. Handle 12/24 hour mode (Status Register B, bit 1)
+5. Compute Unix timestamp: total seconds since 1970-01-01
 
-## RTC Reader
+The resulting `g_epoch_base` is used by `sys_gettimeofday()`, `sys_clock_gettime()`, and `sys_time()` to provide wall-clock time.
 
-`rtc_read_unix()` reads the CMOS Real-Time Clock registers:
+## Global State
 
-- Handles BCD-to-binary conversion
-- Supports 12/24 hour format
-- Handles leap year calculations
-- Returns a Unix timestamp
+| Variable | Type | Description |
+|---|---|---|
+| `g_ticks` | `volatile uint64_t` | System tick counter (incremented on each IRQ 0) |
+| `g_epoch_base` | `uint64_t` | Unix timestamp at boot |
 
-The epoch time is used to initialize the system clock at boot.
+NOTE: The PIT is the legacy timer source. The LAPIC timer is calibrated against it and provides the per-CPU scheduling tick at 250 Hz.
 
-## Usage
-
-The PIT is used for:
-
-- System timekeeping (tick counting)
-- LAPIC timer calibration reference
-- Preemption timer (alongside LAPIC timer)
+Last reviewed: 2026-07-22

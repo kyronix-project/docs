@@ -1,39 +1,42 @@
 # VirtIO
 
-This document describes the VirtIO device support in the Kyronix kernel.
+This document describes the VirtIO network driver in the Kyronix kernel. It is the child of [Drivers](sys-arch/kernel/drivers/index.md).
+
+## Source
+
+`kernel/drivers/virtio_net.c`
 
 ## Overview
 
-VirtIO provides paravirtualized device access for virtual machines. Kyronix implements VirtIO-net for network connectivity in QEMU/KVM environments.
+VirtIO provides paravirtualized network access for QEMU virtual machines. The driver implements the VirtIO 1.0 network device specification.
 
-## VirtIO-net
+## Initialization
 
-The VirtIO network driver provides a virtual network interface for the kernel.
+1. Scan PCI devices for VirtIO vendor ID (`0x1AF4`)
+2. Negotiate feature bits with the device
+3. Initialize virtqueues (TX and RX)
+4. Register MAC address (6 bytes)
+5. Set link status to up
 
-### Initialization
+## Virtqueue Layout
 
-`virtnet_init()` is called during boot:
+| Queue | Purpose |
+|---|---|
+| TX queue | Transmit Ethernet frames |
+| RX queue | Receive Ethernet frames |
 
-1. Find the VirtIO-net device (PCI vendor 0x1AF4, device 0x1000)
-2. Negotiate features with the device
-3. Set up virtqueues (receive and transmit)
-4. Map device MMIO registers
-5. Register with the lwIP networking stack
+## Functions
 
-### Virtqueues
+| Function | Description |
+|---|---|
+| `virtnet_init()` | Initialize VirtIO-net device |
+| `virtnet_ready()` | Check if device is operational |
+| `virtnet_send(buf, len)` | Transmit an Ethernet frame |
+| `virtnet_recv(buf, len)` | Receive an Ethernet frame |
+| `virtnet_mac()` | Get MAC address |
 
-The driver uses two virtqueues:
+## Network Integration
 
-- **Receive queue:** Device places incoming packets here
-- **Transmit queue:** Driver places outgoing packets here
+The VirtIO-net driver is connected to the lwIP network stack via the kyronix netif layer. Raw Ethernet frames are passed between the driver and lwIP without additional encapsulation.
 
-Each virtqueue uses a ring buffer of descriptors, available/used rings, and notification mechanisms.
-
-### Integration
-
-VirtIO-net integrates with the lwIP networking stack via the `kyronix_netif` adapter:
-
-1. `virtnet_init()` creates the network interface
-2. `net_init()` initializes lwIP and registers the interface
-3. Incoming packets are passed to lwIP via `netif_input()`
-4. Outgoing packets are sent via the transmit virtqueue
+Last reviewed: 2026-07-22

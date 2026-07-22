@@ -1,91 +1,83 @@
-# Signal Handling
+# Signals
 
-This document describes the POSIX signal handling subsystem in the Kyronix kernel.
+This document describes the signal handling implementation in the Kyronix kernel. It is the child of [Process Management](sys-arch/kernel/proc/index.md).
+
+## Source
+
+`kernel/proc/signal.c`, `kernel/proc/signal.h`
 
 ## Overview
 
-Kyronix implements POSIX.1 real-time signals with support for signal handlers, signal masks, alternate signal stacks, and job control stops.
+The Kyronix kernel implements POSIX-compatible signal handling with Linux ABI compatibility. Signals are delivered by constructing an `rt_sigframe` on the user stack and redirecting execution to the signal handler.
 
-## Signal Numbers
+## Supported Signals
 
-Standard POSIX signals are supported (1-31), including:
-
-| Signal | Default Action | Description |
-|--------|---------------|-------------|
-| SIGHUP (1) | Terminate | Hangup |
-| SIGINT (2) | Terminate | Interrupt |
-| SIGQUIT (3) | Core dump | Quit |
-| SIGILL (4) | Core dump | Illegal instruction |
-| SIGTRAP (5) | Core dump | Trap |
-| SIGABRT (6) | Core dump | Abort |
-| SIGBUS (7) | Core dump | Bus error |
-| SIGFPE (8) | Core dump | Floating point exception |
-| SIGKILL (9) | Terminate | Kill (unblockable) |
-| SIGUSR1 (10) | Terminate | User-defined signal 1 |
-| SIGSEGV (11) | Core dump | Segmentation fault |
-| SIGUSR2 (12) | Terminate | User-defined signal 2 |
-| SIGPIPE (13) | Terminate | Broken pipe |
-| SIGALRM (14) | Terminate | Alarm |
-| SIGTERM (15) | Terminate | Termination |
-| SIGCHLD (18) | Ignore | Child exited |
-| SIGCONT (19) | Continue | Continue |
-| SIGSTOP (20) | Stop | Stop (unblockable) |
-| SIGTSTP (21) | Stop | Terminal stop |
-| SIGWINCH (28) | Ignore | Window resize |
+| Signal | Value | Default Action |
+|---|---|---|
+| `SIGHUP` | 1 | Fatal |
+| `SIGINT` | 2 | Fatal |
+| `SIGQUIT` | 3 | Fatal |
+| `SIGILL` | 4 | Fatal |
+| `SIGTRAP` | 5 | Fatal |
+| `SIGABRT` | 6 | Fatal |
+| `SIGBUS` | 7 | Fatal |
+| `SIGFPE` | 8 | Fatal |
+| `SIGKILL` | 9 | Fatal (uncatchable) |
+| `SIGUSR1` | 10 | Fatal |
+| `SIGSEGV` | 11 | Fatal |
+| `SIGUSR2` | 12 | Fatal |
+| `SIGPIPE` | 13 | Fatal |
+| `SIGALRM` | 14 | Fatal |
+| `SIGTERM` | 15 | Fatal |
+| `SIGCHLD` | 17 | Non-fatal (ignore) |
+| `SIGCONT` | 18 | Non-fatal (continue) |
+| `SIGSTOP` | 19 | Stop (uncatchable) |
+| `SIGTSTP` | 20 | Stop |
+| `SIGTTIN` | 21 | Stop |
+| `SIGTTOU` | 22 | Stop |
+| `SIGWINCH` | 28 | Non-fatal (ignore) |
 
 ## Signal Delivery
 
-`proc_send_signal(proc, sig)` sets the corresponding bit in `pending_sigs` and wakes the process if it is in `PROC_WAITING` state.
+### `signal_check(f)`
 
-`signal_check(frame)` is called from the syscall return path:
+Called on every syscall entry/exit and timer interrupt:
 
-1. Checks TTY signals (SIGWINCH, SIGTSTP, etc.)
-2. Finds the lowest unmasked pending signal
-3. Clears the pending bit
-4. If the process is being traced (ptrace), stops for the tracer
-5. Otherwise, delivers the signal
+1. Check terminal-driven signals via `tty_check_signals()`
+2. Load pending signals masked by complement of `sig_mask`
+3. Find lowest-numbered unmasked signal via `__builtin_ctzll`
+4. Clear from `pending_sigs`
+5. If ptrace-traced, call `proc_ptrace_stop()`
+6. Otherwise call `deliver_signal()`
 
-## Signal Actions
+### `deliver_signal(p, sig, frame)`
 
-`rt_sigaction(sig, act, oldact)` sets/gets signal disposition:
+- **SIGSTOP/SIGTSTP (default)**: Enter job-control stop
+- **SIG_IGN**: No action
+- **SIG_DFL**: If fatal, call `proc_do_exit(-sig)`
+- **Custom handler**: Build signal frame and redirect execution
 
-| Handler | Behavior |
-|---------|----------|
-| `SIG_DFL` | Default action (terminate, core, ignore, stop, continue) |
-| `SIG_IGN` | Ignore the signal |
-| User handler | Set up signal frame and jump to handler |
+### `setup_sigframe(p, sig, frame)`
 
-## Signal Frame
+1. Check for alternate signal stack (`SA_ONSTACK`)
+2. Allocate `rt_sigframe_t` (440 bytes) below user RSP
+3. Populate with register snapshot, signal info, ucontext
+4. Update signal mask (add signal bit + `sa_mask`)
+5. Redirect: `rcx` = handler, `rdi` = signal number, `rsi` = siginfo, `rdx` = ucontext
 
-When a user handler is invoked, the kernel sets up an `rt_sigframe_t` on the user stack containing:
+## Signal Action Flags
 
-- `uc.uc_mcontext` -- full register context (256 bytes)
-- `uc.uc_sigmask` -- previous signal mask
-- `info.si_signo` -- signal number
-- `pretcode` -- address of the signal restorer
-
-The handler is called with:
-
-- `rdi` = signal number
-- `rsi` = pointer to `siginfo_t`
-- `rdx` = pointer to `ucontext_t`
-
-## Signal Return
-
-`rt_sigreturn()` restores the full register context from the signal frame on the user stack, including the previous signal mask.
-
-## Signal Mask
-
-- `rt_sigprocmask(how, set, oldset)` with `SIG_BLOCK`, `SIG_UNBLOCK`, `SIG_SETMASK`
-- `SIGKILL` and `SIGSTOP` cannot be masked
-- During signal delivery, the signal's own mask (plus `sa_mask`) is applied
+| Flag | Value | Effect |
+|---|---|---|
+| `SA_NOCLDSTOP` | 0x0001 | Don't send SIGCHLD on stops |
+| `SA_NOCLDWAIT` | 0x0002 | Don't create zombies |
+| `SA_SIGINFO` | 0x0004 | Extended handler (3-arg) |
+| `SA_ONSTACK` | 0x08000000 | Execute on alternate stack |
+| `SA_RESETHAND` | 0x80000000 | Reset to SIG_DFL after delivery |
+| `SA_NODEFER` | 0x40000000 | Don't block signal during handler |
 
 ## Alternate Signal Stack
 
-`sigaltstack()` allows a process to specify an alternate stack for signal handlers. If `SA_ONSTACK` is set and the alternate stack is configured, the signal frame is placed on the alternate stack.
+Each process can have an alternate stack configured via `sigaltstack()`. The frame is placed at the top of the alternate stack when `SA_ONSTACK` is set.
 
-## Job Control
-
-- `SIGSTOP` / `SIGTSTP` stop the process (enters `PROC_STOPPED`)
-- `SIGCONT` resumes a stopped process
-- Stopped processes notify their parent via `SIGCHLD`
+Last reviewed: 2026-07-22

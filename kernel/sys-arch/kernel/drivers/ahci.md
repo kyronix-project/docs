@@ -1,43 +1,44 @@
 # AHCI
 
-This document describes the AHCI (Advanced Host Controller Interface) driver in the Kyronix kernel.
+This document describes the AHCI (Advanced Host Controller Interface) driver in the Kyronix kernel. It is the child of [Drivers](sys-arch/kernel/drivers/index.md).
+
+## Source
+
+`kernel/drivers/ahci.c`
 
 ## Overview
 
-The AHCI driver provides access to SATA disk drives. It implements the AHCI specification for communicating with SATA controllers.
+AHCI provides access to SATA storage devices. The driver initializes AHCI controllers discovered via PCI enumeration and registers block devices for each attached drive.
 
 ## Initialization
 
-`ahci_init()` is called after PCI enumeration:
-
-1. Find the AHCI controller (PCI class 0x01, subclass 0x06, prog_if 0x01)
-2. Read the ABAR (AHCI Base Address Register) from BAR5
-3. Map the AHCI MMIO registers into kernel space
-4. Reset the controller (HBA reset)
-5. Discover attached ports
-6. Initialize port command lists and FIS structures
-7. Register as a block device
+1. Scan PCI devices for AHCI class (class=0x01, subclass=0x06)
+2. Read ABAR (AHCI Base Address Register) from PCI BAR5
+3. Map AHCI HBA registers into kernel virtual space
+4. Reset the HBA and detect attached ports
+5. For each active port, initialize command list and FIS structures
+6. Register as block device via `block_register()`
 
 ## Block Device Interface
 
-AHCI provides a block device interface for the VFS:
+AHCI block devices are accessed through the generic block device layer:
 
-| Operation | Description |
-|-----------|-------------|
-| `block_read(dev, buf, sector, count)` | Read sectors from disk |
-| `block_write(dev, buf, sector, count)` | Write sectors to disk |
+```c
+struct block_device {
+    void (*read)(uint64_t lba, uint32_t count, void *buf);
+    void (*write)(uint64_t lba, uint32_t count, const void *buf);
+    uint64_t total_sectors;
+    // ...
+};
+```
 
-## Integration
+## Functions
 
-The AHCI driver works with the ext2 filesystem driver:
+| Function | Description |
+|---|---|
+| `ahci_init()` | Initialize AHCI controller(s) |
+| `ahci_ready()` | Check if AHCI is operational |
 
-1. `pci_enumerate()` discovers the AHCI controller
-2. `ahci_init()` sets up the block device
-3. The ext2 driver checks the block device for a valid superblock
-4. If found, the ext2 filesystem is mounted at `/`
+NOTE: AHCI devices appear as `/dev/ahci0` via devfs.
 
-## Limitations
-
-- No Native Command Queuing (NCQ)
-- No port multiplier support
-- No hot-plug detection
+Last reviewed: 2026-07-22

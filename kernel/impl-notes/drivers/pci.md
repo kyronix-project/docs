@@ -1,50 +1,32 @@
 # PCI Enumeration
 
-This document describes the PCI enumeration implementation.
+This document describes the PCI bus enumeration implementation in the Kyronix kernel. It is the child of [Driver Implementation Notes](index.md).
 
-## Configuration Mechanism
+The Kyronix kernel enumerates the PCI bus using Port I/O-based configuration space access to discover and catalog all connected hardware devices.
 
-The PCI configuration space is accessed via the standard x86 mechanism:
+## Configuration Space Access
 
-- **Address port:** 0xCF8 (32-bit register)
-- **Data port:** 0xCFC (32-bit register)
+PCI configuration space is accessed through two standard I/O ports:
 
-### Address Format
+- **0xCF8 (Address register):** Receives the configuration address, which encodes the bus number, device number, function number, and register offset.
+- **0xCFC (Data register):** Provides read/write access to the configuration data at the specified address.
 
-```
-Bit 31:    Enable bit
-Bits 30-24: Reserved
-Bits 23-16: Bus number
-Bits 15-11: Device number
-Bits 10-8:  Function number
-Bits 7-2:   Register number ( dword-aligned)
-Bits 1-0:   Always 0
-```
+## Enumeration Procedure
 
-## Scanning Algorithm
+1. Iterate over all 256 buses.
+2. For each bus, iterate over all 32 devices.
+3. For each device, iterate over all 8 functions.
+4. Read the Vendor ID register at offset 0x00.
+5. If the Vendor ID returns `0xFFFF`, the device or function is absent; skip to the next function.
+6. Read the Class Code, Subclass, Programming Interface (prog_if), Base Address Register (BAR) registers, and Header Type from the configuration space.
+7. Store the device information in the global device table.
 
-`pci_enumerate()` scans all 256 buses, 32 devices, 8 functions:
+## Usage
 
-1. For each bus/device/function, read vendor ID at offset 0
-2. If vendor ID is 0xFFFF, no device exists (skip)
-3. Read class code (offset 8, bits 23-16), subclass (bits 15-8), prog_if (bits 7-0)
-4. Read BAR0-BAR5 to determine MMIO regions and sizes
-5. Read IRQ line/pin from header
-6. Store in `g_pci_devs[]` (up to 64 devices)
+The global device table populated by PCI enumeration is consumed by the following drivers to discover and initialize their respective hardware:
 
-## BAR Decoding
+- AHCI (Advanced Host Controller Interface) driver
+- VirtIO driver
+- Other PCI device drivers that query the device table during their probe sequences
 
-To determine BAR size:
-
-1. Write all-1s to the BAR register
-2. Read back the value
-3. The size is encoded in the zero bits (memory BAR) or the low 2 bits (I/O BAR)
-
-## Device Classes
-
-| Class | Subclass | Description |
-|-------|----------|-------------|
-| 0x01 | 0x06 | SATA/AHCI controller |
-| 0x02 | 0x00 | Ethernet controller (VirtIO-net) |
-| 0x06 | 0x04 | PCI-to-PCI bridge |
-| 0xFF | 0xFF | UIO device (custom) |
+Last reviewed: 2026-07-22

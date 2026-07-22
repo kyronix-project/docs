@@ -1,45 +1,39 @@
 # devfs
 
-This document describes the devfs virtual filesystem in the Kyronix kernel.
+This document describes the devfs filesystem in the Kyronix kernel. It is the child of [Filesystems](sys-arch/kernel/fs/index.md).
+
+## Source
+
+`kernel/fs/devfs.c`
 
 ## Overview
 
-devfs provides a virtual filesystem at `/dev` that exposes device nodes. It is similar to Linux's devtmpfs but simpler.
+devfs is an in-memory filesystem mounted at `/dev` that provides device nodes. It dynamically creates entries for registered character and block devices.
 
-## Device Nodes
+## Mount Points
 
-| Path | Type | Description |
-|------|------|-------------|
-| `/dev/null` | char | Discards all writes, returns EOF on read |
-| `/dev/zero` | char | Returns zero bytes on read |
-| `/dev/random` | char | Returns random bytes (CSPRNG) |
-| `/dev/urandom` | char | Returns random bytes (CSPRNG) |
-| `/dev/tty` | char | Controlling terminal |
-| `/dev/console` | char | System console |
-| `/dev/fb0` | char | Framebuffer device |
-| `/dev/input/event0` | char | Input event device |
-| `/dev/sda` | char | Block device (SATA/AHCI) |
+| Mount | Description |
+|---|---|
+| `/dev` | Device nodes |
+| `/sys` | System information |
+| `/dev/pts` | Pseudo-terminal devices |
 
-## Implementation
+## Device Registration
 
-devfs creates device nodes during `vfs_init()` using `vfs_create_chr()`. Each device node has associated character device operations:
+Drivers register device nodes via `devfs_register()`:
 
-- `chr_read` -- read from device
-- `chr_write` -- write to device
-- `chr_ioctl` -- device-specific control
-- `chr_pollin` -- check for available input
-- `chr_mmap` -- memory-map device (for framebuffer, UIO)
+| Device | Path | Description |
+|---|---|---|
+| Framebuffer | `/dev/fb0` | Linear framebuffer device |
+| Input event 0 | `/dev/input/event0` | Keyboard input |
+| Input event 1 | `/dev/input/event1` | Mouse input |
+| AHCI disk | `/dev/ahci0` | SATA/AHCI block device |
 
-## Framebuffer Device
+## Device Types
 
-The framebuffer device (`/dev/fb0`) supports:
+| Type | Description |
+|---|---|
+| `VFS_TYPE_DEV` | Character device |
+| `VFS_TYPE_BLK` | Block device |
 
-- `mmap` -- map framebuffer memory into user space
-- `ioctl` -- query framebuffer parameters (resolution, bpp, stride)
-
-## Input Device
-
-The input device (`/dev/input/event0`) provides evdev-style input events:
-
-- `read` -- returns `input_event` structures (type, code, value)
-- `pollin` -- reports whether events are available
+Last reviewed: 2026-07-22

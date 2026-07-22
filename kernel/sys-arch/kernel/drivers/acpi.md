@@ -1,33 +1,40 @@
 # ACPI
 
-This document describes the ACPI (Advanced Configuration and Power Interface) driver in the Kyronix kernel.
+This document describes the ACPI implementation in the Kyronix kernel. It is the child of [Drivers](sys-arch/kernel/drivers/index.md).
+
+## Source
+
+`kernel/drivers/acpi.c`
 
 ## Overview
 
-The ACPI driver provides power management and system control through the ACPI tables provided by the firmware.
+ACPI (Advanced Configuration and Power Interface) provides hardware configuration information. The kernel parses the RSDP (Root System Description Pointer) to locate the ACPI tables.
 
 ## Initialization
 
-`acpi_init(rsdp_phys)` is called during boot with the physical address of the RSDP (Root System Description Pointer), obtained from the Limine `LIMINE_RSDP_REQUEST`.
+```c
+acpi_init(rsdp_address);
+```
+
+1. Read RSDP from the address provided by Limine
+2. Validate RSDP signature ("RSD PTR ")
+3. Locate RSDT/XSDT (Root/Extended System Description Table)
+4. Parse SDT entries for MADT (APIC), FADT (Fixed ACPI), and others
+
+## Key Tables
+
+| Table | Purpose |
+|---|---|
+| RSDP | Root pointer to all ACPI tables |
+| RSDT/XSDT | Root/Extended System Description Table |
+| MADT | Multiple APIC Description Table (CPU topology) |
+| FADT | Fixed ACPI Description Table (PM timer, reset port) |
 
 ## Functions
 
 | Function | Description |
-|----------|-------------|
-| `acpi_init(rsdp_phys)` | Parse ACPI tables from RSDP |
-| `acpi_available()` | Check if ACPI is initialized |
-| `acpi_poweroff()` | Power off the system |
-| `acpi_reboot()` | Reboot the system |
+|---|---|
+| `acpi_init(addr)` | Parse ACPI tables from RSDP address |
+| `acpi_available()` | Check if ACPI was successfully initialized |
 
-## RSDP Discovery
-
-The RSDP pointer is provided by the Limine bootloader via the `LIMINE_RSDP_REQUEST`. For base revision >= 3, this is a physical address.
-
-## Power Management
-
-The ACPI driver provides system-level power control:
-
-- `acpi_poweroff()` -- ACPI shutdown (writes to PM1a/PM1b control blocks)
-- `acpi_reboot()` -- ACPI reset (writes to reset register)
-
-These functions are called from the kernel when the user requests a shutdown or reboot.
+Last reviewed: 2026-07-22

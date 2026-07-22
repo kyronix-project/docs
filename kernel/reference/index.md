@@ -1,9 +1,11 @@
 # Reference
 
-This section provides reference documentation for the Kyronix kernel.
+This document provides reference material for the Kyronix kernel. It is the root of the Reference section.
 
-## Topics
+## Subsections
 
-- [Syscalls](syscalls.md) -- complete syscall reference
-- [Protocols](protocols.md) -- IPC and communication protocols
-- [API](api.md) -- kernel internal API reference
+1. [Syscalls](syscalls.md)
+2. [Protocols](protocols.md)
+3. [API](api.md)
+
+Last reviewed: 2026-07-22

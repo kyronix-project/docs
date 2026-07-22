@@ -1,13 +1,12 @@
 # Implementation Notes
 
-This section provides detailed implementation notes for the Kyronix kernel and drivers.
+This document provides implementation notes for the Kyronix kernel subsystems. It is the root of the Implementation Notes section.
 
-## Topics
+The Implementation Notes section covers detailed internal implementation details for the kernel and drivers, including initialization sequences, scheduling internals, Interrupt Request (IRQ) handling, memory management algorithms, and Peripheral Component Interconnect (PCI) enumeration.
 
-- [Kernel](kernel/index.md) -- kernel subsystem implementation details
-  - [Initialization](kernel/initialization.md) -- boot sequence and subsystem init
-  - [Scheduling](kernel/scheduling.md) -- scheduler internals
-  - [IRQ Handling](kernel/irq-handling.md) -- interrupt dispatch and handling
-  - [Memory Management](kernel/memory-management.md) -- PMM, VMM, heap details
-- [Drivers](drivers/index.md) -- driver implementation details
-  - [PCI](drivers/pci.md) -- PCI enumeration internals
+## Sections
+
+- [Kernel](kernel/index.md) — Kernel core subsystem implementation notes
+- [Drivers](drivers/index.md) — Driver subsystem implementation notes
+
+Last reviewed: 2026-07-22

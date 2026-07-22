@@ -1,52 +1,49 @@
 # Input
 
-This document describes the input subsystem in the Kyronix kernel.
+This document describes the input subsystem in the Kyronix kernel. It is the child of [Drivers](sys-arch/kernel/drivers/index.md).
+
+## Source
+
+`kernel/drivers/input.c`, `kernel/drivers/kbd.c`, `kernel/drivers/ps2mouse.c`
 
 ## Overview
 
-The input subsystem handles keyboard and mouse input from PS/2 devices. It provides a unified event interface similar to Linux evdev.
+The input subsystem provides an event-based interface for keyboard and mouse input. Events are delivered to user-space via character devices at `/dev/input/event0` (keyboard) and `/dev/input/event1` (mouse).
 
-## Components
-
-- **PS/2 Keyboard** (`kbd.c`) -- AT-compatible keyboard driver
-- **PS/2 Mouse** (`ps2mouse.c`) -- PS/2 mouse/trackpad driver
-- **Input Core** (`input.c`) -- event queue and device registration
-
-## Input Events
-
-Input events are reported as `input_event` structures:
+## Event Structure
 
 ```c
 struct input_event {
-    uint16_t type;   // EV_KEY, EV_REL, EV_SYN
-    uint16_t code;   // key code or axis
-    int32_t value;   // press/release, movement
+    uint32_t type;      // Event type
+    uint32_t code;      // Key/button code
+    int32_t  value;     // Value (press/release/movement)
 };
 ```
 
-## Keyboard
+## Event Types
 
-The PS/2 keyboard driver:
+| Type | Description |
+|---|---|
+| Keyboard event | Key press/release with scancode |
+| Mouse event | Relative X/Y movement and button state |
 
-1. Initializes the keyboard controller via port 0x60/0x64
-2. Handles IRQ 1 (keyboard interrupt)
-3. Translates scan codes to key events
-4. Supports key press, release, and repeat
-5. Provides key events to `/dev/input/event0`
+## Devices
 
-## Mouse
+| Device | Path | Source |
+|---|---|---|
+| Keyboard | `/dev/input/event0` | PS/2 keyboard |
+| Mouse | `/dev/input/event1` | PS/2 mouse |
 
-The PS/2 mouse driver:
+## Functions
 
-1. Initializes the mouse via port 0x60/0x64 with auxiliary device commands
-2. Handles IRQ 12 (mouse interrupt)
-3. Reads 3-byte or 4-byte packets
-4. Reports relative X/Y movement and button state
+| Function | Description |
+|---|---|
+| `input_init()` | Initialize input subsystem |
+| `kbd_init()` | Initialize PS/2 keyboard |
+| `ps2mouse_init()` | Initialize PS/2 mouse |
 
-## TTY Integration
+## Terminal Integration
 
-The input subsystem integrates with the TTY layer:
+The input subsystem is connected to the TTY layer. Keyboard events drive the virtual terminal, and mouse events are forwarded to user-space via the event devices.
 
-- Keyboard events are forwarded to the active virtual terminal
-- Special key combinations (Ctrl+Alt+Del, Ctrl+Alt+F1-F6) trigger console switching
-- Terminal escape sequences are generated from key events
+Last reviewed: 2026-07-22

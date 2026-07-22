@@ -1,31 +1,39 @@
 # Drivers
 
-This section describes the device drivers in the Kyronix kernel.
+This document describes the device driver subsystem of the Kyronix kernel. It is the child of [Kernel](sys-arch/kernel/index.md) and parent of driver component documents.
 
 ## Components
 
-- [PCI](pci.md) -- PCI bus enumeration and configuration
-- [ACPI](acpi.md) -- ACPI power management
-- [AHCI](ahci.md) -- SATA/AHCI block device driver
-- [VirtIO](virtio.md) -- VirtIO device support (network)
-- [Input](input.md) -- PS/2 keyboard and mouse input
-- [Framebuffer](fb.md) -- Linear framebuffer display
-- [TTY](tty.md) -- Terminal emulation and virtual consoles
-- [Serial](serial.md) -- UART 16550 serial console
+| Component | Source | Description |
+|---|---|---|
+| PCI | `drivers/pci.c` | PCI bus enumeration |
+| ACPI | `drivers/acpi.c` | ACPI table parsing |
+| AHCI | `drivers/ahci.c` | SATA/AHCI block device driver |
+| VirtIO | `drivers/virtio_net.c` | VirtIO network device driver |
+| Input | `drivers/input.c` | Event-based input subsystem |
+| Keyboard | `drivers/kbd.c` | PS/2 keyboard driver |
+| PS/2 Mouse | `drivers/ps2mouse.c` | PS/2 mouse driver |
+| Framebuffer | `drivers/fb.c` | Linear framebuffer driver |
+| fbdev | `drivers/fbdev.c` | Framebuffer device (/dev/fb0) |
+| TTY | `drivers/tty.c` | Teletype terminal |
+| Virtual TTY | `drivers/vt.c` | Virtual terminal switching |
+| Serial | `drivers/serial.c` | Serial port (COM1) |
+| Block | `drivers/block.c` | Block device abstraction |
+| UIO | `drivers/uio.c` | Userspace I/O device |
 
-## Driver Model
+## Initialization Order
 
-Kyronix uses a simple, direct driver model without a complex device tree or driver framework. Drivers are initialized in a fixed order during boot:
+Drivers are initialized in `kmain()` after PCI enumeration and ACPI setup:
 
-1. PCI enumeration
-2. ACPI
-3. AHCI (block devices)
-4. VirtIO-net (network)
-5. Framebuffer
-6. Input (PS/2 keyboard, mouse)
-7. TTY / virtual consoles
-8. Serial (UART 16550)
+1. `block_init()` -- Block device abstraction
+2. `ahci_init()` -- SATA/AHCI controllers
+3. `virtnet_init()` -- VirtIO network
+4. `net_init()` -- Network stack (lwIP)
+5. `uio_init()` -- Userspace I/O
+6. `fbdev_init()` -- Framebuffer device
+7. `input_init()` -- Input event subsystem
+8. `vt_init()` -- Virtual terminal
+9. `pit_init()` -- Timer
+10. `ps2mouse_init()` -- PS/2 mouse
 
-## Interrupt Handling
-
-Hardware interrupts are dispatched through the PIC (vectors 32-47) or LAPIC. Each IRQ has a registered handler in `g_irq_handlers[irq]`. The handler is called from the common ISR path after register state is saved.
+Last reviewed: 2026-07-22

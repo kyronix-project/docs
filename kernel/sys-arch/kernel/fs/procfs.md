@@ -1,33 +1,31 @@
 # procfs
 
-This document describes the procfs virtual filesystem in the Kyronix kernel.
+This document describes the procfs filesystem in the Kyronix kernel. It is the child of [Filesystems](sys-arch/kernel/fs/index.md).
+
+## Source
+
+`kernel/fs/procfs.c`
 
 ## Overview
 
-procfs provides a virtual filesystem at `/proc` that exposes kernel and process information as files. It implements a subset of the Linux `/proc` interface.
+procfs is an in-memory filesystem mounted at `/proc` that exposes process and kernel information. It provides a read-only view of system state.
 
-## Mounted Files
+## Mount Point
 
-| Path | Description |
-|------|-------------|
-| `/proc/meminfo` | Memory usage information |
+`/proc`
+
+## Entries
+
+| Entry | Description |
+|---|---|
+| `/proc/<pid>/` | Per-process information directories |
+| `/proc/self/` | Symlink to current process |
+| `/proc/meminfo` | Memory usage statistics |
 | `/proc/version` | Kernel version string |
 | `/proc/uptime` | System uptime |
-| `/proc/self` | Symlink to the current process's `/proc/<pid>` directory |
-| `/proc/<pid>/` | Per-process information |
-
-## Per-Process Files
-
-| Path | Description |
-|------|-------------|
-| `/proc/<pid>/status` | Process status (name, state, PID, PPID, etc.) |
-| `/proc/<pid>/maps` | Memory maps (VMA regions) |
-| `/proc/<pid>/fd/` | File descriptor symlinks |
 
 ## Implementation
 
-procfs is implemented as an in-memory filesystem. Files are generated dynamically on read. The filesystem driver registers via `vfs_register_fs()` and creates nodes under `/proc` during `vfs_init()`.
+procfs nodes are dynamically generated on lookup. The filesystem does not persist data to disk; all information is gathered from kernel state at access time.
 
-## Integration
-
-procfs is mounted automatically during kernel initialization. The mount is performed in `vfs_init()` before user-space processes are started.
+Last reviewed: 2026-07-22

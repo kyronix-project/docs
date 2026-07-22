@@ -1,82 +1,88 @@
 # Jail
 
-This document describes the jail (sandbox) subsystem in the Kyronix kernel.
+This document describes the jail (sandbox) subsystem in the Kyronix kernel. It is the child of [Process Management](sys-arch/kernel/proc/index.md).
+
+## Source
+
+`kernel/proc/jail.c`, `kernel/proc/jail.h`
 
 ## Overview
 
-The jail subsystem provides process isolation similar to FreeBSD jails or Linux namespaces. It allows creating sandboxed environments with configurable isolation levels.
+Jails provide process isolation through hierarchical containment with four independent isolation axes: filesystem, PID namespace, IPC, and privilege restriction. Up to 32 jails can exist simultaneously.
 
-## Jail Structure
+## Jail Flags
+
+| Flag | Value | Effect |
+|---|---|---|
+| `JAILF_FS` | 0x01 | Filesystem isolation (chroot-like root) |
+| `JAILF_PID` | 0x02 | PID namespace isolation |
+| `JAILF_IPC` | 0x04 | IPC isolation |
+| `JAILF_PRIV` | 0x08 | Privilege restriction (root inside jail is restricted) |
+
+## Jail States
+
+| State | Value | Description |
+|---|---|---|
+| `JAIL_UNUSED` | 0 | Slot is free |
+| `JAIL_ACTIVE` | 1 | Jail is operational |
+| `JAIL_DYING` | 2 | Pending destruction (waiting for processes to exit) |
+
+## Data Structures
 
 ```c
-typedef struct jail {
-    int state;            // JAIL_UNUSED, JAIL_ACTIVE, JAIL_DYING
-    uint32_t id;          // unique jail ID
-    uint32_t parent_id;   // parent jail (0 = host)
-    uint32_t flags;       // isolation flags
-    char name[32];        // jail name
-    char root[256];       // filesystem root path
-    uint32_t nprocs;      // current process count
-    uint32_t max_procs;   // process limit (0 = unlimited)
-    uint32_t creator_uid; // UID of the creator
+typedef struct {
+    int      state;
+    uint32_t id;
+    uint32_t parent_id;
+    uint32_t flags;
+    char     name[32];
+    char     root[256];
+    int      nprocs;
+    int      max_procs;
+    uint32_t creator_uid;
 } jail_t;
 ```
 
-## Isolation Flags
-
-| Flag | Value | Description |
-|------|-------|-------------|
-| `JAILF_FS` | 0x01 | Filesystem root isolation |
-| `JAILF_PID` | 0x02 | PID namespace isolation |
-| `JAILF_IPC` | 0x04 | IPC namespace isolation |
-| `JAILF_PRIV` | 0x08 | Restrict privileged operations |
-| `JAILF_EXEMPT` | 0x80 | Exempt from auto-isolation |
-
-## Host Jail
-
-Jail ID 0 (`JAIL_HOST`) represents the unconfined host environment. All processes start in the host jail unless explicitly placed in a child jail.
-
 ## Syscalls
 
-| Syscall | Description |
-|---------|-------------|
-| `jail_create(cfg)` | Create a new jail |
-| `jail_attach(jid)` | Move current process into a jail |
-| `jail_get(jid, info)` | Get jail information |
-| `jail_list()` | List all jails |
-| `jail_remove(jid)` | Remove a jail |
-| `jail_self()` | Get current jail ID |
-| `jail_set_auto(enabled)` | Enable/disable auto-isolation |
+| Syscall | Number | Description |
+|---|---|---|
+| `jail_create` | 500 | Create a new jail |
+| `jail_attach` | 501 | Move process into a jail |
+| `jail_get` | 502 | Get jail info by ID |
+| `jail_list` | 503 | List all visible jails |
+| `jail_remove` | 504 | Remove/destroy a jail |
+| `jail_self` | 505 | Get current process's jail ID |
+| `jail_set_auto` | 506 | Toggle auto-isolation mode |
+
+## Key Functions
+
+| Function | Description |
+|---|---|
+| `jail_init()` | Zero all jail slots |
+| `jail_create(parent_id, cfg, uid)` | Create jail with parent relationship |
+| `jail_enter(p, jid)` | Move process into jail |
+| `jail_remove(jid, requester)` | Remove jail (permission checked) |
+| `jail_can_see(observer, target)` | PID namespace visibility check |
+| `jail_host_priv(p)` | Check host-level privilege |
+| `jail_can_fork(jid)` | Check fork permission and capacity |
+| `jail_root_current()` | Get current process's jail root |
+| `jail_canon_clamp(path, sz, root)` | Clamp path within jail root |
+
+## Path Canonicalization
+
+The jail system canonicalizes paths to prevent directory traversal escapes:
+
+1. `path_canon()` resolves `.` and `..`, collapses multiple slashes
+2. `jail_canon_clamp()` ensures the result stays within the jail's root
+3. `jail_strip_root()` removes the jail root prefix for `getcwd()` display
+
+## Hierarchy
+
+Jails form a tree rooted at `JAIL_HOST` (0). A process can only enter a jail that is a descendant of its current jail. This prevents privilege escalation by entering an ancestor jail.
 
 ## Auto-Isolation
 
-When `jail_set_auto(1)` is enabled, every `execve()` automatically creates a new jail for the process. This provides automatic sandboxing without explicit jail creation.
+When `g_jail_auto_isolate` is enabled (via `jail_set_auto`), every `execve()` call creates a fresh jail for the process. The init process and its direct descendants are exempt (marked with `JAILF_EXEMPT`).
 
-## Path Confinement
-
-Jails with `JAILF_FS` confine filesystem access to the jail's root path:
-
-- `jail_canon_clamp()` -- clamps `..` at the jail root
-- `jail_root_current()` -- returns the current jail's root
-- `jail_strip_root()` -- strips the jail root prefix for `getcwd`
-
-## Process Lifecycle
-
-1. `jail_create()` allocates a jail slot and sets the root path
-2. `jail_enter()` transitions a process into the jail (increments `nprocs`)
-3. `jail_ref()` / `jail_unref()` manage the process count
-4. `jail_remove()` marks the jail as `JAIL_DYING` if processes remain, or frees it immediately
-5. When the last process exits, a dying jail is freed automatically
-
-## Visibility
-
-- `jail_can_see(observer, target)` -- in a PID-isolated jail, processes can only see other processes in the same jail
-- `jail_host_priv(p)` -- checks if a process has root privileges and is not restricted by `JAILF_PRIV`
-
-## Limits
-
-| Resource | Limit |
-|----------|-------|
-| Max jails | 32 |
-| Max jail name | 32 characters |
-| Max jail root path | 256 characters |
+Last reviewed: 2026-07-22

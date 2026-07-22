@@ -1,78 +1,70 @@
-# Virtual Memory Manager (VMM)
+# VMM
 
-This document describes the virtual memory management subsystem in the Kyronix kernel.
+This document describes the Virtual Memory Manager (VMM) in the Kyronix kernel. It is the child of [Memory Management](sys-arch/kernel/mm/index.md).
+
+## Source
+
+`kernel/mm/vmm.c`, `kernel/mm/vmm.h`
 
 ## Overview
 
-The VMM manages x86-64 4-level page tables (PML4 -> PDPT -> PD -> PT) with 4 KiB page granularity and NX bit support.
+The VMM manages 4-level x86-64 page tables (PML4 -> PDPT -> PD -> PT) for both kernel and user address spaces. It provides page mapping, unmapping, protection changes, and demand paging support.
 
-## Initialization
+## Address Space Layout
 
-`vmm_init()` enables the NX bit via `IA32_EFER` MSR bit 11, then reads the current CR3 to initialize the kernel address space.
+- **User half**: `0x000000000000` to `0x800000000000` (128 TiB)
+- **Kernel half**: `0x800000000000` to `0xFFFFFFFFFFFF` (128 TiB)
 
-## Address Spaces
+Kernel page table entries (PML4 indices 256-511) are shared across all address spaces.
 
-Each process has its own `vmm_space_t` containing:
+## Composite Flags
 
-- `pml4_phys` -- physical address of the PML4
-- `vmas[2048]` -- fixed array of VMA descriptors
+| Name | Value | Meaning |
+|---|---|---|
+| `VMM_KCODE` | `PRESENT` | Kernel code: present, NX off |
+| `VMM_KDATA` | `PRESENT \| WRITE \| NX` | Kernel data: present, writable, NX |
+| `VMM_UCODE` | `PRESENT \| USER` | User code: present, user, NX off |
+| `VMM_UDATA` | `PRESENT \| WRITE \| USER \| NX` | User data: present, writable, user, NX |
 
-New address spaces share the kernel half (PML4 entries 256-511) with the kernel space. User-half PML4 entries start zeroed.
-
-## Operations
+## Functions
 
 | Function | Description |
-|----------|-------------|
-| `vmm_map(sp, virt, phys, flags)` | Map a virtual page to a physical page |
-| `vmm_unmap(sp, virt)` | Remove a mapping |
-| `vmm_virt_to_phys(sp, virt)` | Translate virtual to physical address |
-| `vmm_protect(sp, virt, flags)` | Change page protection flags |
-| `vmm_space_new()` | Create a new address space |
-| `vmm_space_free(sp)` | Free an address space (user half only) |
-| `vmm_switch(sp)` | Switch to a different address space (load CR3) |
-| `vmm_fork_user(dst, src)` | Copy user-half page tables for fork() |
+|---|---|
+| `vmm_init()` | Enable NX bit via EFER, read kernel PML4 from CR3 |
+| `vmm_map(sp, virt, phys, flags)` | Map a single page (allocates intermediate tables as needed) |
+| `vmm_unmap(sp, virt)` | Unmap a single page (zeroes leaf PTE) |
+| `vmm_protect(sp, virt, flags)` | Change flags on existing mapping |
+| `vmm_virt_to_phys(sp, virt)` | Walk page tables for virtual-to-physical translation |
+| `vmm_user_range_ok(sp, virt, len, write)` | Validate user range accessibility |
+| `vmm_user_range_fault_in(sp, virt, len, write)` | Demand page user range (allocates on fault) |
+| `vmm_space_new()` | Create new address space (copies kernel half) |
+| `vmm_space_free(sp)` | Free all user-half page tables and frames |
+| `vmm_switch(sp)` | Switch address space (write CR3) |
+| `vmm_fork_user(dst, src)` | Deep-copy entire user-half address space |
 
-## Page Flags
+## Page Table Indexing
 
-| Flag | Description |
-|------|-------------|
-| `VMM_PRESENT` | Page is present |
-| `VMM_WRITE` | Page is writable |
-| `VMM_USER` | Page is accessible from ring 3 |
-| `VMM_NX` | No-execute bit |
-| `VMM_PCD` | Page cache disable (uncacheable) |
-
-Predefined flag combinations:
-
-- `VMM_KCODE` = PRESENT (kernel code)
-- `VMM_KDATA` = PRESENT | WRITE | NX (kernel data)
-- `VMM_UCODE` = PRESENT | USER (user code)
-- `VMM_UDATA` = PRESENT | WRITE | USER | NX (user data)
+| Level | Index Macro | Bits |
+|---|---|---|
+| PML4 | `(va >> 39) & 0x1FF` | Bits 39-47 |
+| PDPT | `(va >> 30) & 0x1FF` | Bits 30-38 |
+| PD | `(va >> 21) & 0x1FF` | Bits 21-29 |
+| PT | `(va >> 12) & 0x1FF` | Bits 12-20 |
 
 ## Demand Paging
 
 `vmm_user_range_fault_in()` implements demand paging:
 
-1. Checks if each page in the range is present and accessible
-2. For missing pages, checks if a VMA covers the address
-3. If yes, allocates a zeroed physical page and maps it with the VMA's flags
-4. This enables lazy allocation for `mmap(MAP_ANON)` regions
+1. Check if the VMA subsystem permits the fault (`vma_page_fault_allowed`)
+2. Allocate a zeroed physical page via `pmm_alloc_zeroed()`
+3. Map it into the address space with appropriate flags
+4. This allows lazy allocation of user memory on first access
 
-## User Range Validation
+## Address Space Management
 
-- `vmm_user_range_ok()` -- verifies every page is mapped and accessible
-- `vmm_user_range_fault_in()` -- verifies + faults in missing pages
+- Maximum 256 concurrent address spaces (`VMM_MAX_SPACES`)
+- Each space stores its PML4 physical address and a flat array of up to 2048 VMAs
+- `vmm_space_new()` copies kernel half entries from `g_kernel_space`
+- `vmm_space_free()` recursively frees all user-half page table levels
 
-## Fork
-
-`vmm_fork_user()` copies the entire user-half page table hierarchy:
-
-1. Copies VMA metadata via `vma_copy()`
-2. Walks the source PML4 entries 0-255
-3. For each present page, allocates a new physical page, copies the content, and maps it in the destination
-
-> **Note:** This is a full-copy fork (not copy-on-write). All user pages are duplicated immediately.
-
-## Pool
-
-The VMM maintains a pool of 256 address spaces (`VMM_MAX_SPACES`). `vmm_space_new()` allocates from this pool.
+Last reviewed: 2026-07-22

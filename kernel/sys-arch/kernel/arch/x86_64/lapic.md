@@ -1,68 +1,69 @@
 # LAPIC
 
-This document describes the Local APIC (Advanced Programmable Interrupt Controller) driver in the Kyronix kernel.
+This document describes the Local APIC implementation in the Kyronix kernel. It is the child of [x86-64 Architecture](sys-arch/kernel/arch/x86_64/index.md).
+
+## Source
+
+`kernel/arch/x86_64/lapic.c`
 
 ## Overview
 
-The Local APIC handles:
-
-- Per-CPU timer interrupts
-- Inter-Processor Interrupts (IPIs)
-- Spurious interrupt handling
-
-## MMIO Mapping
-
-The LAPIC is memory-mapped at physical address read from `IA32_APIC_BASE` MSR (0x1B). It is mapped to virtual address `0xfffffe0000000000` with `VMM_PCD` (uncacheable) during initialization.
-
-## Registers
-
-The driver defines all standard LAPIC MMIO register offsets:
-
-| Register | Offset | Description |
-|----------|--------|-------------|
-| ID | 0x020 | APIC ID |
-| VERSION | 0x030 | APIC version |
-| TPR | 0x080 | Task Priority Register |
-| EOI | 0x0B0 | End-Of-Interrupt |
-| SVR | 0x0F0 | Spurious Vector Register |
-| ICR_LO/HI | 0x300/0x310 | Interrupt Command Register |
-| LVT Timer | 0x320 | Timer LVT entry |
+The Local APIC (Advanced Programmable Interrupt Controller) provides per-CPU interrupt handling, Inter-Processor Interrupts (IPIs), and the LAPIC timer. The MMIO registers are mapped at virtual address `0xfffffe0000000000`.
 
 ## Initialization
 
-`lapic_init()` performs:
+1. Read `IA32_APIC_BASE` MSR to get physical MMIO address
+2. Enable LAPIC if disabled (set `IA32_APIC_BASE_ENABLE`)
+3. Map physical LAPIC to `LAPIC_VIRT` with `VMM_KDATA | VMM_PCD` (page-cache disabled for MMIO)
+4. Enable Spurious Vector Register (SVR) with spurious vector
+5. Mask error, thermal, performance, and timer LVT entries
+6. Clear Task Priority Register (TPR)
+7. Read LAPIC ID and version
 
-1. Read `IA32_APIC_BASE` MSR
-2. Enable LAPIC if not already enabled
-3. Map MMIO region into kernel space
-4. Enable SVR with spurious vector 0xFF
-5. Mask error/thermal/perf LVT entries
-6. Set TPR to 0 (accept all interrupts)
-7. Log LAPIC ID and version
+## Key Functions
 
-## Timer
+| Function | Description |
+|---|---|
+| `lapic_init()` | Full LAPIC initialization and MMIO mapping |
+| `lapic_eoi()` | Write 0 to EOI register (end-of-interrupt) |
+| `lapic_send_ipi(lapic_id, icr_lo)` | Send IPI to specific LAPIC |
+| `lapic_send_ipi_self(icr_lo)` | Send self-IPI |
+| `lapic_calibrate_timer()` | Calibrate LAPIC timer against PIT |
+| `lapic_timer_start_periodic(hz)` | Start periodic timer at given frequency |
+| `lapic_timer_freq()` | Return calibrated timer frequency (ticks/ms) |
 
-### Calibration
+## Timer Calibration
 
-`lapic_calibrate_timer()` uses PIT Channel 0 as a reference:
+The calibration algorithm:
 
-1. Set LAPIC timer to max count (0xFFFFFFFF) with divider 0x0B
-2. Wait for 5 PIT counter wraps
-3. Compute ticks/ms from the calibrated frequency
+1. Set LAPIC timer to one-shot mode with divisor `0x0B` and initial count `0xFFFFFFFF`
+2. Count 5 PIT counter wraps (each wrap = one PIT period)
+3. Compute `remaining = 0xFFFFFFFF - current_count`
+4. Derive `g_lapic_timer_freq = remaining / 5` (ticks per millisecond)
 
-### Periodic Mode
+The LAPIC timer is then started in periodic mode at 250 Hz for scheduling ticks.
 
-`lapic_timer_start_periodic(hz)` configures the LAPIC timer in periodic mode at the specified frequency (default 250 Hz).
+## IPI Mechanism
 
-## IPI Delivery
+Inter-Processor Interrupts are sent via the Interrupt Command Register (ICR):
 
-`lapic_send_ipi(lapic_id, icr_lo)` sends an Inter-Processor Interrupt:
+1. Wait for send-pending bit to clear
+2. Write target LAPIC ID to ICR_HI
+3. Write delivery info to ICR_LO
+4. Wait for send-pending to clear again
 
-1. Wait for ICR not pending
-2. Write destination LAPIC ID to ICR_HI
-3. Write delivery mode to ICR_LO
-4. Wait for delivery confirmation
+## Register Layout
 
-## EOI
+| Offset | Register | Description |
+|---|---|---|
+| 0x20 | TPR | Task Priority Register |
+| 0x80 | EOI | End of Interrupt |
+| 0xB0 | ICR_LO | Interrupt Command (low) |
+| 0xC0 | ICR_HI | Interrupt Command (high) |
+| 0xD0 | SVR | Spurious Vector Register |
+| 0x320 | LVT Timer | Timer LVT entry |
+| 0x350 | LVT LINT0 | LINT0 LVT entry |
+| 0x360 | LVT LINT1 | LINT1 LVT entry |
+| 0x370 | LVT Error | Error LVT entry |
 
-`lapic_eoi()` writes 0 to the EOI register to acknowledge the current interrupt.
+Last reviewed: 2026-07-22

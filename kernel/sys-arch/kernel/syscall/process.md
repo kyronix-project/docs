@@ -1,98 +1,103 @@
 # Process Control
 
-This document describes the process control syscalls in the Kyronix kernel.
+This document describes the process control system calls (syscalls) in the Kyronix kernel. It is the child of [Syscalls](index.md).
 
-## Syscalls
+## Syscall Table
 
-| Syscall | Number | Description |
-|---------|--------|-------------|
-| `clone` | 56 | Create a thread or process |
-| `fork` | 57 | Fork a new process |
-| `vfork` | 58 | Fork (shared address space) |
-| `execve` | 59 | Execute a program |
-| `exit` | 60 | Exit the current process |
-| `wait4` | 61 | Wait for process state change |
-| `exit_group` | 231 | Exit all threads in the process |
-| `set_tid_address` | 96 | Set TID address for cleartid |
-| `arch_prctl` | 158 | Architecture-specific process control |
+- 56 `clone` - Create a new process/thread
+- 57 `fork` - Create a child process
+- 58 `vfork` - Create a child process (treated as fork)
+- 59 `execve` - Execute a program
+- 60 `exit` - Terminate a process
+- 61 `wait4` - Wait for a process to change state
+- 231 `exit_group` - Terminate all threads in a process
+- 247 `waitid` - Wait for a specific process state change
 
-## fork
+- 39 `getpid` - Get process id (PID)
+- 110 `getppid` - Get parent PID
+- 186 `gettid` - Get thread id (TID)
+- 102 `getuid` - Get real user id (UID)
+- 104 `getgid` - Get real group id (GID)
+- 107 `geteuid` - Get effective UID
+- 108 `getegid` - Get effective GID
 
-`fork()` creates a new process by duplicating the calling process:
+- 105 `setuid` - Set real UID
+- 106 `setgid` - Set real GID
+- 109 `setpgid` - Set process group id (PGID)
+- 112 `setsid` - Create a session and set session id (SID)
+- 113 `setreuid` - Set real and effective UID
+- 114 `setregid` - Set real and effective GID
 
-1. Allocate a new process slot
-2. Create a new address space via `vmm_space_new()`
-3. Copy the entire user-half page table via `vmm_fork_user()`
-4. Copy the file descriptor table
-5. Copy signal state, credentials, jail ID
-6. Set the child's state to `PROC_READY`
+- 115 `getgroups` - Get supplementary group list
+- 116 `setgroups` - Set supplementary group list
+- 117 `setresuid` - Set real, effective, and saved UID
+- 118 `getresuid` - Get real, effective, and saved UID
+- 119 `setresgid` - Set real, effective, and saved GID
+- 120 `getresgid` - Get real, effective, and saved GID
 
-> **Note:** This is a full-copy fork (not copy-on-write). All user pages are duplicated immediately.
+- 121 `getpgid` - Get PGID
+- 122 `setfsuid` - Set filesystem UID
+- 123 `setfsgid` - Set filesystem GID
+- 124 `getsid` - Get session ID
 
-## clone
+- 158 `arch_prctl` - Architecture-specific process register (ARCH_SET_FS, ARCH_SET_GS, ARCH_GET_FS, ARCH_GET_GS)
 
-`clone()` creates a new thread with configurable sharing:
+## clone Flags
 
-| Flag | Description |
-|------|-------------|
-| `CLONE_VM` | Share address space (thread) |
-| `CLONE_FILES` | Share file descriptor table |
-| `CLONE_THREAD` | Create a thread (same thread group) |
-| `CLONE_SETTLS` | Set thread-local storage |
-| `CLONE_CHILD_CLEARTID` | Clear TID on child exit |
-| `CLONE_PARENT` | Share parent |
+The `clone` syscall accepts flags to control process/thread creation behavior:
 
-## execve
+- `CLONE_VM` - Share memory with parent process
+- `CLONE_FILES` - Share file descriptor table with parent
+- `CLONE_THREAD` - Create a thread (shared address space)
+- `CLONE_SETTLS` - Set thread-local storage (TLS)
+- `CLONE_PARENT_SETTID` - Store child TID at parent-provided address
+- `CLONE_CHILD_CLEARTID` - Clear child TID at exit and wake waiters
+- `CLONE_CHILD_SETTID` - Store child TID at child-provided address
 
-`execve(path, argv, envp)` replaces the current process image:
+## execve Details
 
-1. Validate the path and arguments
-2. Create a new address space
-3. Load the ELF binary (PT_LOAD segments)
-4. Handle shebang (`#!`) interpreter scripts
-5. Set up the user stack with arguments and environment
-6. Set the instruction pointer to the ELF entry point
+The `execve` syscall performs the following operations:
 
-### ELF Loading
+1. Reads the shebang line (#!) if present and interprets the interpreter path
+2. Loads the executable binary (Executable and Linkable Format (ELF))
+3. For dynamically linked executables, sets up the dynamic linker via `PT_INTERP` segment at virtual address 0x7f0000000000
+4. Sets Position Independent Executable (PIE) base address at 0x400000
+5. Sets up the user stack with `argc`, `argv`, `envp`, and auxiliary vector (`auxv`)
+6. Initializes Address Space Layout Randomization (ASLR) for the memory map bump allocator (`mmap_bump`)
 
-The loader supports:
+## fork Details
 
-- 64-bit ELF executables
-- `PT_LOAD` segments (loaded into memory)
-- Position-independent executables (PIE)
-- Dynamic linker loading at `0x7f0000000000`
+The `fork` syscall performs the following operations:
 
-### Shebang Support
+1. Deep-copies the address space via `vmm_fork_user()`
+2. Copies the file descriptor table
+3. Creates a new kernel stack for the child process
+4. The child process returns with `rax` set to 0
 
-If the executable starts with `#!`, the kernel:
+## clone Thread Support
 
-1. Reads the interpreter path from the first line
-2. Loads the interpreter (e.g., `/lib/ld-musl-x86_64.so.1`)
-3. Passes the original executable as an argument to the interpreter
+The `clone` syscall with `CLONE_THREAD` flag creates a thread that shares:
 
-## exit
+- The address space (via `CLONE_VM`)
+- The file descriptor table (via `CLONE_FILES`)
 
-`exit(code)` terminates the current process:
+## wait4 Details
 
-1. Set state to `PROC_DYING`
-2. Close all file descriptors
-3. Release address space
-4. Notify parent with `SIGCHLD`
-5. Reparent children to PID 1
-6. Release jail reference
-7. Enter zombie state for parent to reap
+The `wait4` syscall supports the following features:
 
-## wait4
+- Zombie reaping of terminated children
+- Handling of `ptrace`-stopped tracees
+- Job-stopped children
+- Non-blocking operation via `WNOHANG` flag
 
-`wait4(pid, status, options)` waits for a child process state change:
+## proc_do_exit
 
-- `WUNTRACED` -- report stopped processes
-- `WCONTINUED` -- report continued processes
-- Returns PID of the changed process and status information
+The `proc_do_exit` function performs the following cleanup operations:
 
-## Job Control
+1. Cleans up System V Shared Memory (SHM)
+2. Unreferences the jail
+3. Releases the file descriptor table
+4. Reparents children to PID 1 (init process)
+5. Delivers `SIGCHLD` signal to the parent process
 
-Stopped processes (SIGSTOP/SIGTSTP) enter `PROC_STOPPED` state and notify their parent via `SIGCHLD`. The parent can:
-
-- `wait4(WUNTRACED)` to detect the stop
-- `kill(SIGCONT)` to resume the process
+Last reviewed: 2026-07-22

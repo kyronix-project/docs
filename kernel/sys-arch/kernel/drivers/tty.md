@@ -1,50 +1,43 @@
 # TTY
 
-This document describes the TTY (terminal) subsystem in the Kyronix kernel.
+This document describes the TTY (teletype) subsystem in the Kyronix kernel. It is the child of [Drivers](sys-arch/kernel/drivers/index.md).
+
+## Source
+
+`kernel/drivers/tty.c`, `kernel/drivers/vt.c`
 
 ## Overview
 
-The TTY subsystem provides terminal emulation, virtual console switching, and serial console support. It manages the interface between user-space applications and the display/input devices.
+The TTY subsystem provides terminal I/O with support for multiple virtual terminals. It handles character buffering, line editing, and ANSI escape sequence processing.
 
 ## Components
 
-- **Virtual Terminals (VT)** (`vt.c`) -- multiple virtual console screens
-- **TTY Core** (`tty.c`) -- terminal line discipline and input processing
-- **Framebuffer Console** -- renders text to the framebuffer
+| Component | Source | Description |
+|---|---|---|
+| TTY | `tty.c` | Terminal I/O and line discipline |
+| Virtual TTY | `vt.c` | Virtual terminal switching |
 
-## Virtual Terminals
+## Features
 
-Kyronix supports multiple virtual terminals (VT1-VT6), switchable via:
+- Line buffering with echo
+- ANSI escape sequence parsing (colors, cursor movement)
+- Multiple virtual terminals (switched via keyboard)
+- SIGINT (Ctrl+C), SIGQUIT (Ctrl+\) generation
+- Cursor blink timer
 
-- Ctrl+Alt+F1 through Ctrl+Alt+F6
-- Ctrl+Alt+Del for reboot
+## Functions
 
-Each VT maintains its own screen buffer and cursor position.
+| Function | Description |
+|---|---|
+| `tty_putchar(c)` | Output a character to the current terminal |
+| `tty_check_signals()` | Check for terminal-driven signals |
 
-## Terminal Features
+## Signal Generation
 
-- Text-mode rendering using PSF font (`psf_font.S`)
-- Cursor blinking (managed by the timer interrupt)
-- ANSI escape sequence parsing
-- Scrollback buffer
+| Key | Signal | Description |
+|---|---|---|
+| Ctrl+C | SIGINT | Interrupt |
+| Ctrl+\ | SIGQUIT | Quit |
+| Ctrl+Z | SIGTSTP | Terminal stop |
 
-## Serial Console
-
-When `CONFIG_SERIAL_CONSOLE` is enabled, kernel log output is also sent to the COM1 serial port (UART 16550). This is useful for debugging and headless operation.
-
-## TTY Operations
-
-| Operation | Description |
-|-----------|-------------|
-| `read()` | Read input from the terminal |
-| `write()` | Write output to the terminal |
-| `ioctl()` | Terminal control (TIOCGWINSZ, TCGETS, TCSETS, etc.) |
-| `pollin()` | Check if input is available |
-
-## Signal Integration
-
-The TTY layer generates signals for terminal events:
-
-- `SIGWINCH` -- window size changed
-- `SIGTSTP` -- Ctrl+Z pressed
-- `SIGINT` -- Ctrl+C pressed (via line discipline)
+Last reviewed: 2026-07-22

@@ -1,64 +1,72 @@
-# Virtual Memory Areas (VMA)
+# VMA
 
-This document describes the VMA (Virtual Memory Area) tracking system in the Kyronix kernel.
+This document describes the Virtual Memory Area (VMA) subsystem in the Kyronix kernel. It is the child of [Memory Management](sys-arch/kernel/mm/index.md).
+
+## Source
+
+`kernel/mm/vma.c`, `kernel/mm/vma.h`
 
 ## Overview
 
-VMAs track user-space memory regions, recording their address range, protection flags, and ownership. They support demand paging, memory protection, and proper cleanup on unmap.
+VMAs track which virtual address ranges are mapped in each address space. They are used for demand paging, mmap/munmap tracking, and page fault handling.
 
-## VMA Structure
+## Protection Constants
+
+| Constant | Value | Description |
+|---|---|---|
+| `PROT_READ` | 0x1 | Read permission |
+| `PROT_WRITE` | 0x2 | Write permission |
+| `PROT_EXEC` | 0x4 | Execute permission |
+
+## Data Structure
 
 ```c
 typedef struct {
-    uint64_t start;       // start address (inclusive)
-    uint64_t end;         // end address (exclusive)
-    uint32_t prot;        // protection flags (PROT_READ, PROT_WRITE, PROT_EXEC)
-    uint32_t map_flags;   // mmap flags (MAP_ANON, MAP_FIXED, etc.)
-    uint8_t used;         // 1 = slot in use
-    uint8_t free_on_unmap; // 1 = pages are owned, free on munmap
+    uint64_t start;         // Start virtual address
+    uint64_t end;           // End virtual address
+    uint32_t prot;          // Protection flags (PROT_READ/WRITE/EXEC)
+    uint32_t map_flags;     // VMM mapping flags
+    uint8_t  used;          // Slot in use
+    uint8_t  free_on_unmap; // Free physical pages on unmap
 } vmm_vma_t;
 ```
 
-Each address space contains a flat array of 2048 VMA entries.
+VMAs are stored in a flat array of 2048 entries (`VMM_VMA_MAX`) inside each `vmm_space_t`. All lookups are linear scans.
 
-## Protection Flags
-
-| Flag | Value | Description |
-|------|-------|-------------|
-| `PROT_READ` | 0x1 | Page is readable |
-| `PROT_WRITE` | 0x2 | Page is writable |
-| `PROT_EXEC` | 0x4 | Page is executable |
-
-## Operations
+## Functions
 
 | Function | Description |
-|----------|-------------|
-| `vma_add(sp, start, len, prot, map_flags, free_on_unmap)` | Add a new VMA |
-| `vma_remove(sp, start, len)` | Remove VMAs covering a range |
-| `vma_remove_overlaps(sp, start, len)` | Remove overlapping portions of VMAs |
+|---|---|
+| `vma_reset(sp)` | Zero all VMA slots |
+| `vma_copy(dst, src)` | Copy VMA array between address spaces |
+| `vma_conflicts(sp, start, len)` | Check for overlapping VMAs |
+| `vma_add(sp, start, len, prot, flags, free_on_unmap)` | Register a new VMA |
+| `vma_remove(sp, start, len)` | Remove a VMA range (with splitting) |
+| `vma_remove_overlaps(sp, start, len)` | Remove all overlapping VMAs |
 | `vma_protect(sp, start, len, prot)` | Change protection on a range |
-| `vma_conflicts(sp, start, len)` | Check if a range overlaps existing VMAs |
-| `vma_range_ok(sp, start, len)` | Check if entire range is covered by VMAs |
-| `vma_copy(dst, src)` | Copy VMA array (for fork) |
-| `vma_reset(sp)` | Clear all VMAs (for new address space) |
+| `vma_page_fault_allowed(sp, addr, write, exec)` | Check if a page fault can be handled |
+| `vma_page_flags(sp, addr)` | Convert VMA protection to PTE flags |
+| `vma_range_ok(sp, start, len)` | Validate range is fully covered by VMAs |
 
-## Demand Paging Integration
+## VMA Splitting
 
-| Function | Description |
-|----------|-------------|
-| `vma_page_fault_allowed(sp, addr, write, exec)` | Check if a page fault should be handled |
-| `vma_page_flags(sp, addr)` | Get page table flags for a VMA region |
-| `vma_page_mapped(sp, addr)` | Check if an address has a VMA |
-| `vma_page_owned(sp, addr)` | Check if pages in this region are owned |
+When removing a sub-range from a VMA, four cases apply:
 
-When a page fault occurs, the VMM calls `vma_page_fault_allowed()` to determine if the fault is in a demand-paggable region. If the VMA has `free_on_unmap` set, the page is allocated and mapped on demand.
+1. **No leftovers**: Clear the VMA entirely
+2. **Left only**: Shrink `v->end = start`
+3. **Right only**: Shrink `v->start = end`
+4. **Split**: Create two VMAs (left and right of the hole)
 
-## Split and Merge
+Case 4 requires an empty VMA slot and may fail with `-ENOMEM`.
 
-The `split_for_hole()` function splits a VMA when a range is removed from the middle:
+## Page Fault Integration
 
-- If the removed range is in the left portion, the VMA is truncated
-- If the removed range is in the right portion, the VMA's start is moved
-- If the removed range is in the middle, the VMA is split into two (requires a free slot)
+`vma_page_fault_allowed()` is called by the VMM's demand paging path. It returns true only if:
 
-`vma_protect()` uses split + re-add to change protection on sub-ranges.
+- A VMA covers the faulting address
+- The VMA has `free_on_unmap` set
+- The VMA has sufficient permissions (PROT_READ minimum, PROT_WRITE for writes, PROT_EXEC for instruction fetches)
+
+This enables lazy allocation: pages are allocated on first access rather than at mmap time.
+
+Last reviewed: 2026-07-22

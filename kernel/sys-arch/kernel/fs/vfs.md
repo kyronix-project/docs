@@ -1,97 +1,77 @@
-# Virtual Filesystem (VFS)
+# VFS
 
-This document describes the Virtual Filesystem layer in the Kyronix kernel.
+This document describes the Virtual Filesystem Switch (VFS) in the Kyronix kernel. It is the child of [Filesystems](sys-arch/kernel/fs/index.md).
+
+## Source
+
+`kernel/fs/vfs.c`, `kernel/fs/vfs_internal.h`
 
 ## Overview
 
-The VFS provides a unified interface for all filesystem operations, abstracting away the differences between disk-backed filesystems (ext2, FAT32), virtual filesystems (procfs, devfs), and IPC primitives (pipes, sockets).
+The VFS provides a unified interface for all filesystem operations. It manages mount points, file descriptor tables, node reference counting, and filesystem registration.
 
-## Node Structure
+## Data Structures
 
-Every file, directory, device, or socket is represented by a `vfs_node_t`:
+### `vfs_node_t`
 
-```c
-typedef struct vfs_node {
-    char name[256];
-    uint8_t type;         // VFS_TYPE_REG, VFS_TYPE_DIR, VFS_TYPE_CHR, etc.
-    uint32_t mode;        // POSIX permission bits
-    uint32_t uid, gid;    // ownership
-    uint32_t ino;         // inode number
-    uint32_t refcnt;      // reference count
-    uint8_t deleted;      // marked for deletion
-    uint64_t size;        // file size in bytes
-    uint8_t *data;        // file data (ramfs/chr)
-    uint64_t capacity;    // allocated capacity
-    struct vfs_node *children;  // child linked list (directories)
-    struct vfs_node *next;      // sibling link
-    struct vfs_node *parent;    // parent directory
-    char *symlink;        // symlink target
-    // character device operations
-    int64_t (*chr_read)(...);
-    int64_t (*chr_write)(...);
-    int64_t (*chr_ioctl)(...);
-    bool (*chr_pollin)(...);
-    // filesystem operations
-    void *fs_private;     // per-node filesystem data (e.g., ext2 inode)
-    struct vfs_fs_ops *fs_ops;  // filesystem operations
-} vfs_node_t;
-```
+Represents a file, directory, device, or special node:
 
-## File Descriptor Structure
+| Field | Description |
+|---|---|
+| `type` | Node type (VFS_TYPE_REG, VFS_TYPE_DIR, VFS_TYPE_DEV, etc.) |
+| `name` | Node name |
+| `size` | File size in bytes |
+| `mode` | Permission bits |
+| `uid`, `gid` | Owner and group |
+| `data` | Filesystem-specific data |
+| `fs_ops` | Filesystem operations (read, write, create, etc.) |
+| `refcount` | Reference count |
 
-Each open file descriptor is represented by a `vfs_file_t`:
+### `vfs_file_t`
 
-```c
-typedef struct {
-    uint64_t magic;
-    vfs_node_t *node;     // associated node (NULL for pipes/sockets)
-    uint64_t pos;         // current file position
-    int flags;            // open flags (O_RDONLY, O_WRONLY, etc.)
-    pipe_t *pipe;         // pipe data (for pipe FDs)
-    int pipe_end;         // pipe end (0=read, 1=write)
-    // socket fields
-    struct net_conn *inet; // inet socket connection
-    // eventfd/timerfd
-    eventfd_state_t *efd;
-    timerfd_state_t *tfd;
-    uint8_t cloexec;      // close-on-exec flag
-} vfs_file_t;
-```
+Represents an open file descriptor:
 
-## Filesystem Driver Registration
+| Field | Description |
+|---|---|
+| `node` | Associated VFS node |
+| `offset` | Current file position |
+| `flags` | Open flags (O_RDONLY, O_WRONLY, etc.) |
+| `pipe` | Pipe data (for pipe FDs) |
+| `inet` | Inet socket data |
 
-Disk-backed filesystems register via `vfs_register_fs()`:
+## Mount System
 
-```c
-struct filesystem {
-    const char *name;
-    bool (*check_root)(struct block_device *);
-    bool (*mount)(struct block_device *, const char *);
-    int (*sync)(void);
-    int (*create)(struct vfs_node *node, const char *path, uint32_t mode);
-};
-```
+| Function | Description |
+|---|---|
+| `vfs_init()` | Initialize VFS, mount /proc, /sys, /dev/pts |
+| `vfs_mount(path, fs, dev)` | Mount a filesystem at a path |
+| `vfs_lookup(path)` | Look up a node by path |
+| `vfs_register_fs(fs)` | Register a filesystem driver |
 
 ## Path Resolution
 
-- `vfs_lookup(path)` -- resolve a path to a `vfs_node_t`
-- `vfs_lookup_nofollow(path)` -- resolve without following the final symlink
-- `at_resolve(dirfd, path, out, sz)` -- resolve relative to a directory FD (supports `AT_FDCWD`)
+Paths are resolved relative to the process's current working directory (`cwd`) and jail root. The resolution process:
 
-## Initialization
+1. If path is absolute and jail root exists, prepend jail root
+2. Walk components, resolving `.` and `..`
+3. Return refcounted node pointer
 
-`vfs_init()` creates the initial in-memory filesystem tree:
+## Filesystem Operations
 
-1. Create root directory `/`
-2. Create `/dev`, `/proc`, `/sys` directories
-3. Mount procfs at `/proc`
-4. Mount devfs at `/dev`
-5. Create `/dev/pts` for pseudo-terminals
+Each registered filesystem provides:
 
-## Limits
+| Operation | Description |
+|---|---|
+| `check_root(bd)` | Check if a block device contains this filesystem |
+| `mount(bd, path)` | Mount the filesystem |
+| `read(node, buf, off, len)` | Read data |
+| `write(node, buf, off, len)` | Write data |
+| `create(node, name, type)` | Create a file or directory |
+| `unlink(node, name)` | Remove a file |
+| `readdir(node, entries)` | List directory contents |
 
-| Resource | Limit |
-|----------|-------|
-| Max open FDs | 1024 per process |
-| Max node name | 256 characters |
-| Max path | 512 characters |
+## Reference Counting
+
+VFS nodes use reference counting to prevent use-after-free. `vfs_lookup()` increments the refcount; `vfs_node_unref_internal()` decrements it. When the refcount reaches zero, the node is freed.
+
+Last reviewed: 2026-07-22

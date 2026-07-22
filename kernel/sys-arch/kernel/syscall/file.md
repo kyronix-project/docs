@@ -1,96 +1,93 @@
 # File Operations
 
-This document describes the file-related syscalls in the Kyronix kernel.
+This document describes the file operation system calls (syscalls) in the Kyronix kernel. It is the child of [Syscalls](index.md).
 
-## Syscalls
+## Syscall Table
 
-| Syscall | Number | Description |
-|---------|--------|-------------|
-| `read` | 0 | Read from file descriptor |
-| `write` | 1 | Write to file descriptor |
-| `open` | 2 | Open a file |
-| `close` | 3 | Close a file descriptor |
-| `stat` | 4 | Get file status |
-| `fstat` | 5 | Get file status by FD |
-| `lstat` | 6 | Get file status (no follow symlink) |
-| `poll` | 7 | Poll file descriptors |
-| `lseek` | 8 | Seek within a file |
-| `mmap` | 9 | Map files into memory |
-| `access` | 21 | Check file accessibility |
-| `pipe` | 22 | Create a pipe |
-| `select` | 23 | Synchronous I/O multiplexing |
-| `sched_yield` | 24 | Yield the CPU |
-| `dup` | 32 | Duplicate file descriptor |
-| `dup2` | 33 | Duplicate file descriptor to specific number |
-| `nanosleep` | 35 | Sleep for a specified time |
-| `getpid` | 39 | Get process ID |
-| `socket` | 41 | Create a socket |
-| `connect` | 42 | Initiate a connection |
-| `accept` | 43 | Accept a connection |
-| `sendto` | 44 | Send a message |
-| `recvfrom` | 45 | Receive a message |
-| `sendmsg` | 46 | Send a message with ancillary data |
-| `recvmsg` | 47 | Receive a message with ancillary data |
-| `shutdown` | 48 | Shut down a socket |
-| `bind` | 49 | Bind a socket |
-| `listen` | 50 | Listen for connections |
-| `getsockname` | 51 | Get socket name |
-| `getpeername` | 52 | Get peer name |
-| `setsockopt` | 54 | Set socket option |
-| `getsockopt` | 55 | Get socket option |
-| `clone` | 56 | Create a process/thread |
-| `fork` | 57 | Fork a process |
-| `execve` | 59 | Execute a program |
-| `exit` | 60 | Exit the current process |
-| `wait4` | 61 | Wait for process state change |
-| `kill` | 62 | Send a signal to a process |
-| `uname` | 63 | Get system information |
-| `fcntl` | 72 | File control |
-| `getcwd` | 79 | Get current working directory |
-| `chdir` | 80 | Change working directory |
-| `mkdir` | 83 | Create a directory |
-| `rmdir` | 84 | Remove a directory |
-| `creat` | 85 | Create a file |
-| `unlink` | 87 | Remove a link |
-| `readlink` | 89 | Read a symbolic link |
-| `rename` | 82 | Rename a file |
-| `truncate` | 93 | Truncate a file |
-| `ftruncate` | 94 | Truncate a file by FD |
-| `getdents64` | 217 | Read directory entries |
-| `openat` | 257 | Open relative to directory FD |
-| `mkdirat` | 258 | Create directory relative to FD |
-| `newfstatat` | 262 | Stat relative to FD |
-| `unlinkat` | 263 | Unlink relative to FD |
-| `renameat` | 264 | Rename relative to FD |
-| `readlinkat` | 265 | Readlink relative to FD |
-| `fchmodat` | 268 | Change file mode relative to FD |
-| `accessat` | 269 | Access check relative to FD |
-| `dup3` | 292 | Duplicate FD to specific number with flags |
-| `pipe2` | 293 | Create a pipe with flags |
-| `pread64` | 17 | Read from file at offset |
-| `pwrite64` | 18 | Write to file at offset |
-| `sendfile` | 40 | Transfer between file descriptors |
-| `statx` | 332 | Extended file status |
-| `close_range` | 334 | Close a range of FDs |
+- 0 `read` - Read data from a file descriptor (fd)
+- 1 `write` - Write data to a file descriptor
+- 2 `open` - Open a file by path
+- 3 `close` - Close a file descriptor
+- 4 `stat` - Get file status by path
+- 5 `fstat` - Get file status by fd
+- 6 `lstat` - Get file status by path (no symlink follow)
+- 7 `poll` - Wait for events on fds
+- 8 `lseek` - Set file offset for a fd
 
-## File Status
+- 16 `ioctl` - Control device parameters
+- 17 `pread64` - Read from fd at offset
+- 18 `pwrite64` - Write to fd at offset
+- 19 `readv` - Read multiple buffers from fd
+- 20 `writev` - Write multiple buffers to fd
+- 21 `access` - Check file accessibility by path
+- 22 `pipe` - Create a pipe
+- 23 `select` - Monitor multiple fds for events
 
-The `linux_stat` structure returned by stat syscalls:
+- 32 `dup` - Duplicate a fd
+- 33 `dup2` - Duplicate a fd to a specific number
+- 40 `sendfile` - Transfer data between fds
 
-```c
-struct linux_stat {
-    uint64_t st_dev;
-    uint64_t st_ino;
-    uint64_t st_nlink;
-    uint32_t st_mode;
-    uint32_t st_uid;
-    uint32_t st_gid;
-    uint64_t st_rdev;
-    int64_t  st_size;
-    int64_t  st_blksize;
-    int64_t  st_blocks;
-    uint64_t st_atime_sec, st_atime_nsec;
-    uint64_t st_mtime_sec, st_mtime_nsec;
-    uint64_t st_ctime_sec, st_ctime_nsec;
-};
-```
+- 72 `fcntl` - File descriptor control operations
+- 76 `truncate` - Truncate a file to a specified length
+- 77 `ftruncate` - Truncate a fd to a specified length
+- 78 `getdents64` - Read directory entries
+
+- 79 `getcwd` - Get current working directory
+- 80 `chdir` - Change current working directory
+- 81 `fchdir` - Change current working directory by fd
+- 82 `rename` - Rename a file or directory
+- 83 `mkdir` - Create a directory
+- 84 `rmdir` - Remove a directory
+- 85 `creat` - Create a file
+- 86 `link` - Create a hard link
+- 87 `unlink` - Remove a file
+- 88 `symlink` - Create a symbolic link
+- 89 `readlink` - Read a symbolic link
+
+- 90 `chmod` - Change file permissions by path
+- 91 `fchmod` - Change file permissions by fd
+- 92 `chown` - Change file owner by path
+- 93 `fchown` - Change file owner by fd
+- 94 `lchown` - Change file owner (no symlink follow)
+- 95 `umask` - Set file creation mask
+
+- 137 `statfs` - Get filesystem statistics by path
+- 138 `fstatfs` - Get filesystem statistics by fd
+
+- 257 `openat` - Open file relative to directory fd
+- 258 `mkdirat` - Create directory relative to directory fd
+- 260 `mknodat` - Create device node relative to directory fd
+- 261 `fchownat` - Change file owner relative to directory fd
+- 262 `newfstatat` - Get file status relative to directory fd
+- 263 `unlinkat` - Remove file relative to directory fd
+- 264 `renameat` - Rename file relative to directory fds
+- 265 `linkat` - Create hard link relative to directory fds
+- 266 `symlinkat` - Create symbolic link relative to directory fd
+- 267 `readlinkat` - Read symbolic link relative to directory fd
+- 268 `fchmodat` - Change file permissions relative to directory fd
+- 269 `faccessat` - Check file accessibility relative to directory fd
+
+- 292 `dup3` - Duplicate a fd with flags
+- 293 `pipe2` - Create a pipe with flags
+- 295 `preadv` - Read from fd at offset with scatter-gather
+- 296 `pwritev` - Write to fd at offset with scatter-gather
+- 326 `copy_file_range` - Copy data between two fds
+- 332 `statx` - Get extended file status
+- 334 `close_range` - Close a range of fds
+
+## Path Resolution
+
+All path-based syscalls route through `path_abs()` to resolve user-provided paths to absolute paths. This function applies jail root confinement via `jail_root_current()` and prepends the current working directory (`cwd`) for relative paths.
+
+The `at`-relative syscalls (`openat`, `mkdirat`, `unlinkat`, etc.) use `at_resolve()` for directory fd resolution. This function validates the directory fd and combines it with the relative path.
+
+## Internal Helpers
+
+The kernel provides user pointer validation helpers:
+
+- `uptr_ok(ptr, size)` - Validates a user pointer for read access with automatic page faulting
+- `uptr_ok_w(ptr, size)` - Validates a user pointer for write access with automatic page faulting
+
+These helpers ensure user pointers are in valid user address space before dereferencing.
+
+Last reviewed: 2026-07-22

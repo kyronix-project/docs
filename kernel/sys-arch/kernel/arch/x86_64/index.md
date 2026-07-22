@@ -1,18 +1,60 @@
 # x86-64 Architecture
 
-This section describes the x86-64 architecture-specific subsystems in the Kyronix kernel.
+This document describes the x86-64 architecture support in the Kyronix kernel. It is the child of [Architecture](sys-arch/kernel/arch/index.md) and parent of x86-64-specific documents.
 
-## Components
+## Files
 
-- [CPU Primitives](cpu.md) -- port I/O, MSR access, control registers, SSE initialization
-- [GDT](gdt.md) -- Global Descriptor Table and TSS setup
-- [IDT](idt.md) -- Interrupt Descriptor Table and ISR dispatch
-- [LAPIC](lapic.md) -- Local APIC timer and IPI delivery
-- [PIT](pit.md) -- Programmable Interval Timer
-- [Syscall Entry](syscall.md) -- SYSCALL/SYSRET MSR configuration and entry point
+| File | Purpose |
+|---|---|
+| `cpu.h` | CPU primitives, I/O ports, MSRs, control registers, data structures |
+| `gdt.c` | GDT creation, TSS initialization, per-CPU segments |
+| `idt.c` | IDT setup, PIC remapping, ISR dispatch |
+| `idt_stubs.S` | Assembly ISR entry/exit stubs, isr_stub_table |
+| `lapic.c` | Local APIC initialization, IPI, timer calibration |
+| `pit.c` | PIT channel 0 programming, RTC epoch reading |
+| `syscall_setup.c` | SYSCALL/SYSRET configuration, SSE enable, per-CPU local data |
+| `syscall_entry.S` | SYSCALL entry point, enter_userspace trampolines |
 
-## Synchronization Primitives
+## GDT Layout
 
-- **Spinlock** (`spinlock.h`): CAS-based spinlock with `cpu_relax()` in the spin loop. Supports `spin_lock_irqsave` / `spin_unlock_irqrestore` for interrupt-safe locking. Also provides a Big Kernel Lock (BKL) with owner tracking and recursive depth.
-- **Atomics** (`atomic.h`): Lock-prefixed x86 atomic operations (xchg, cmpxchg, fetch_add, inc, dec) and memory barriers (mfence, lfence, sfence).
-- **Per-CPU data** (`percpu.h`): GS-segment-based per-CPU data structure (`cpu_local_t`) containing kernel stack pointer, user stack, CPU ID, LAPIC ID, current process, address space, file descriptor table, and reap thread.
+| Selector | Entry | Description |
+|---|---|---|
+| `0x00` | Null | Null descriptor |
+| `0x08` | Kernel code | 64-bit ring 0 executable |
+| `0x10` | Kernel data | 64-bit ring 0 writable |
+| `0x18` | User data | 64-bit ring 3 writable |
+| `0x20` | User code | 64-bit ring 3 executable |
+| `0x28 + n*0x10` | TSS for CPU n | Task State Segment |
+
+## IDT Vector Layout
+
+| Vectors | Source | Gate Type | Description |
+|---|---|---|---|
+| 0-31 | CPU exceptions | INT_GATE | #DE through #SX |
+| 32-47 | PIC IRQ 0-15 | INT_GATE | Legacy PIC interrupts |
+| 0x80 (128) | SYSCALL | USER_GATE (DPL=3) | System call entry |
+| 224 (0xE0) | LAPIC timer | INT_GATE | Per-CPU timer tick |
+| 255 (0xFF) | LAPIC spurious | INT_GATE | Spurious interrupt |
+
+## IST Usage
+
+| IST Index | Stack | Assigned To |
+|---|---|---|
+| 1 | 16 KiB dedicated | Double Fault (#8) |
+| 2 | 16 KiB dedicated | NMI (vector 2) |
+
+## Per-CPU Data
+
+Per-CPU data is accessed via the GS segment register. `MSR_GS_BASE` points to `cpu_local_t` for the current CPU. Key offsets:
+
+| Offset | Field | Description |
+|---|---|---|
+| 0 | `kernel_rsp` | Kernel stack pointer (for SYSCALL entry) |
+| 8 | `user_rsp` | User stack pointer (saved on SYSCALL) |
+| 16 | `cpu_id` | CPU identifier |
+| 32 | `current` | Current `proc_t` pointer |
+| 40 | `idle` | Idle process pointer |
+
+The `swapgs` instruction swaps between user and kernel GS bases on privilege transitions.
+
+Last reviewed: 2026-07-22

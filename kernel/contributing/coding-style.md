@@ -1,45 +1,16 @@
 # Coding Style
 
-Kyronix uses a consistent coding style across the entire kernel codebase. All contributions must adhere to these conventions.
+This document describes the coding style conventions for the Kyronix kernel. It is the child of [Contributing](index.md).
 
-## Formatter
+## Conventions
 
-The project uses `clang-format` with LLVM style and the following overrides:
+- **Formatting**: enforced by `clang-format` with the project's `.clang-format` file.
+- Run `make fmt` to format all kernel source files.
+- Run `make fmt-check` to verify formatting without changes.
+- **Naming**: snake_case for functions and variables, UPPER_CASE for macros and constants.
+- **Headers**: include what you use, prefer forward declarations.
+- **Error handling**: check return values, use goto-based cleanup.
+- **Memory**: always check allocation results, free on error paths.
+- **Assembly**: AT&T syntax for `.S` files, Intel intrinsics via `<stdint.h>`.
 
-- Indent width: 4 spaces
-- Column limit: 100
-
-Format your changes before committing:
-
-```bash
-make fmt
-```
-
-## C Language Conventions
-
-- **Standard:** C11 (`-std=c11`)
-- **Naming:** `snake_case` for functions, variables, and types. `UPPER_CASE` for macros and constants.
-- **Type prefixes:** Use descriptive prefixes for struct types: `proc_t`, `vfs_node_t`, `vmm_space_t`, `pci_dev_t`.
-- **Header guards:** Use `#pragma once`.
-- **Includes:** System headers in `<>`, project headers in `""`. Order: own header first, then project headers, then system headers.
-- **Static assertions:** Use `_Static_assert` to validate struct layouts at compile time.
-
-## File Organization
-
-- Each source file should be responsible for exactly one subsystem or component.
-- Headers declare interfaces; `.c` files implement them.
-- Assembly files (`.S`) are used for architecture-specific code (trampolines, context switch, syscall entry).
-
-## Error Handling
-
-- Functions that can fail return `int` (0 on success, negative errno on failure) or pointer (`NULL` on failure).
-- Use standard Linux errno values (`EINVAL`, `ENOMEM`, `ENOENT`, etc.).
-- Always check return values of allocation functions (`pmm_alloc`, `kmalloc`, etc.).
-
-## Memory Safety
-
-- Always validate user pointers before dereferencing them.
-- Use `uptr_ok_w()` / `uptr_ok_r()` for user pointer validation.
-- Free resources on error paths (goto-based cleanup or inline cleanup).
-
-> **Warning:** Never use `memcpy` with user pointers directly. Always validate the range first with `vmm_user_range_ok()` or `vmm_user_range_fault_in()`.
+Last reviewed: 2026-07-22

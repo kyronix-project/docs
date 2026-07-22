@@ -1,45 +1,43 @@
 # Framebuffer
 
-This document describes the framebuffer driver in the Kyronix kernel.
+This document describes the framebuffer driver in the Kyronix kernel. It is the child of [Drivers](sys-arch/kernel/drivers/index.md).
+
+## Source
+
+`kernel/drivers/fb.c`, `kernel/drivers/fbdev.c`
 
 ## Overview
 
-The framebuffer driver provides access to the display via the Limine framebuffer. It supports memory-mapped access for user-space graphical applications.
+The framebuffer driver provides access to the linear framebuffer provided by the Limine bootloader. It supports text rendering via a built-in PSF font and exposes a character device at `/dev/fb0`.
 
 ## Initialization
 
-`fb_init()` is called during boot:
+1. Read framebuffer info from Limine (`LIMINE_FRAMEBUFFER_REQUEST`)
+2. Map framebuffer into kernel virtual space
+3. Clear screen with background color
+4. Register `/dev/fb0` character device via fbdev
 
-1. Read framebuffer information from the Limine `LIMINE_FRAMEBUFFER_REQUEST`
-2. Store framebuffer address, width, height, pitch, and bpp
-3. Map the framebuffer memory into kernel space
-4. Create `/dev/fb0` device node
-
-## Framebuffer Info
+## Framebuffer Properties
 
 | Field | Description |
-|-------|-------------|
-| `address` | Physical address of the framebuffer |
-| `width` | Width in pixels |
-| `height` | Height in pixels |
+|---|---|
+| `address` | Linear framebuffer physical address |
+| `width`, `height` | Resolution in pixels |
 | `pitch` | Bytes per scanline |
-| `bpp` | Bits per pixel (32 typical) |
+| `bpp` | Bits per pixel |
 
-## Device Interface
+## Text Rendering
 
-The framebuffer device (`/dev/fb0`) supports:
+The kernel includes a built-in PSF (PC Screen Font) for text rendering. Each character is 8x16 pixels. The framebuffer supports ANSI color codes for colored text output.
 
-- `mmap` -- map framebuffer memory into user space
-- `ioctl` -- query framebuffer parameters
+## Functions
 
-## Framebuffer Device
+| Function | Description |
+|---|---|
+| `fb_init(lfb)` | Initialize framebuffer from Limine response |
+| `fb_clear(color)` | Clear screen with solid color |
+| `fb_putchar(c)` | Render a character at the current cursor position |
+| `fb_set_color(fg, bg)` | Set foreground and background colors |
+| `fb_cursor_blink_tick(ticks)` | Update cursor blink state |
 
-`fbdev_init()` creates the framebuffer device node with:
-
-- `chr_read` -- read pixel data
-- `chr_write` -- write pixel data
-- `chr_mmap` -- map framebuffer into user address space
-
-## UIO Support
-
-The UIO (Userspace I/O) driver (`uio_init()`) provides PCI BAR mapping for user-space device drivers. This allows user-space programs to directly access device registers.
+Last reviewed: 2026-07-22

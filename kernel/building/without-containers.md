@@ -1,66 +1,55 @@
-# Building without Containers
+# Building Without Containers
 
-This section describes how to build Kyronix natively on the host system without using containers.
+This document describes how to build the Kyronix kernel natively on the host system without containers.
 
-## Prerequisites
+## Required Packages
 
-Install the following packages on your host:
+Install the following packages for your distribution:
 
-- `gcc` (with x86-64 target support) or `x86_64-elf-gcc`
-- `musl-gcc` (musl cross-compiler for user-space)
-- `nasm` (Netwide Assembler)
-- `xorriso` (for ISO creation)
-- `make`
-
-On Alpine Linux:
-
-```bash
-apk add gcc musl-dev nasm xorriso make
-```
-
-On Debian/Ubuntu:
-
-```bash
-apt install gcc nasm xorriso make musl-tools
-```
+- **Alpine**: `gcc g++ make binutils musl-dev linux-headers nasm bison flex ncurses-dev cpio e2fsprogs xorriso`
+- **Debian/Ubuntu**: `gcc g++ make binutils nasm bison flex libncurses-dev cpio e2fsprogs xorriso`
+- **Arch**: `gcc make binutils nasm bison flex ncurses cpio e2fsprogs xorriso`
 
 ## Build Steps
 
-1. Clone the repository:
+1. Ensure `gcc` (or `x86_64-elf-gcc`) and `ld` (or `x86_64-elf-ld`) are in `PATH`.
+2. Run the desired target without `CRUNTIME`:
 
 ```bash
-git clone https://github.com/kyronix-project/kyronix.git
-cd kyronix
+make all
+make iso
 ```
 
-2. Build the kernel and user-space:
+3. The Kconfig toolchain (`scripts/kconfig/conf`) is built automatically from source on first run.
+
+## Cross-Compilation
+
+If `x86_64-elf-gcc` and `x86_64-elf-ld` are found in `PATH`, the build system uses them automatically. Otherwise, it falls back to the system `gcc` and `ld`.
+
+## Kernel Configuration
+
+Edit kernel options interactively:
 
 ```bash
-make
+make nconfig
 ```
 
-The build system will:
+This opens an ncurses interface. Configuration is stored in `.config` and generates `kernel/config.h` via Kconfig autoheader.
 
-1. Generate `config.h` from the Kconfig configuration.
-2. Compile all kernel C and assembly sources.
-3. Run `kallsyms` post-processing for kernel symbol resolution.
-4. Link the kernel ELF at virtual base `0xffffffff80000000`.
-5. Build all user-space binaries with `musl-gcc -static -no-pie`.
+## Formatting
 
-3. Run in QEMU:
+Format all kernel C source files:
 
 ```bash
-make run
+make fmt
 ```
 
-## Compiler Flags
+Check formatting without modifying files:
 
-The kernel is compiled with the following flags:
-
-```
--std=c11 -O2 -ffreestanding -fno-stack-protector -fno-pic -fno-pie
--m64 -march=x86-64 -mno-80387 -mno-mmx -mno-sse -mno-sse2
--mno-red-zone -mcmodel=kernel -fno-omit-frame-pointer
+```bash
+make fmt-check
 ```
 
-> **Warning:** Building without containers may produce different results than the containerized build due to toolchain version differences. Use the containerized build for release artifacts.
+Formatting uses `clang-format` with the project's `.clang-format` style file.
+
+Last reviewed: 2026-07-22

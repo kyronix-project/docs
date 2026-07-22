@@ -1,42 +1,49 @@
 # lwIP
 
-This document describes the lwIP integration in the Kyronix kernel.
+This document describes the lwIP integration in the Kyronix kernel. It is the child of [Networking](sys-arch/kernel/net/index.md).
+
+## Source
+
+`kernel/net/lwip/` (lwIP library), `kernel/net/lwip_glue.c`
 
 ## Overview
 
-lwIP (lightweight IP) is a lightweight TCP/IP stack designed for embedded systems. Kyronix uses it to provide TCP/IP networking capabilities.
+lwIP (Lightweight IP) is an open-source TCP/IP stack designed for embedded systems. Kyronix integrates lwIP with a glue layer that bridges its memory allocation to the kernel heap.
 
-## Configuration
+## Glue Layer
 
-The lwIP configuration is defined in `lwipopts.h`:
+The `lwip_glue.c` file maps lwIP's expected libc functions to kernel implementations:
 
-| Option | Value | Description |
-|--------|-------|-------------|
-| `NO_SYS` | 0 | Operating system mode (with threads) |
-| `LWIP_NETCONN` | 1 | Netconn API support |
-| `LWIP_SOCKET` | 1 | Socket API support |
-| `LWIP_DHCP` | 1 | DHCP client |
-| `LWIP_UDP` | 1 | UDP support |
-| `LWIP_TCP` | 1 | TCP support |
-| `LWIP_ICMP` | 1 | ICMP (ping) support |
+| lwIP Expects | Kernel Provides |
+|---|---|
+| `malloc(s)` | `kmalloc(s)` |
+| `free(p)` | `kfree(p)` |
+| `calloc(n, s)` | `kcalloc(n, s)` |
+| `sys_now()` | `g_ticks * 10` (ticks to ms) |
+| `strtol(s, end, base)` | Custom decimal parser |
 
-## OS Glue Layer
+## Protocols Supported
 
-lwIP requires an OS abstraction layer for:
+- TCP (connection-oriented)
+- UDP (connectionless)
+- ICMP (ping)
+- ARP (Address Resolution Protocol)
+- IPv4
 
-- Semaphores (`sys_sem_new`, `sys_sem_signal`, `sys_sem_wait`)
-- Mailboxes (`sys_mbox_new`, `sys_mbox_post`, `sys_mbox_fetch`)
-- Threads (`sys_thread_new`)
-- Timeouts (`sys_timeouts_sleeptime`)
+## Initialization
 
-These are implemented in `lwip_glue.c` using Kyronix's synchronization primitives.
+```c
+net_init();
+```
 
-## Integration
+1. Check `virtnet_ready()`
+2. Call `lwip_init()`
+3. Configure static IP (10.0.2.15/24, gateway 10.0.2.2)
+4. Register kyronix netif with `ethernet_input` as input function
+5. Set DNS server to 10.0.2.3
 
-The lwIP stack runs in its own thread context (`tcpip_thread`). Network packets flow through:
+## Timeout Processing
 
-1. VirtIO-net receives a packet
-2. kyronix_netif passes it to lwIP via `netif_input()`
-3. lwIP processes the packet (IP, TCP, UDP, ICMP)
-4. Data is delivered to the socket layer
-5. Outgoing data follows the reverse path
+lwIP timeouts are processed periodically via `sys_check_timeouts()`. This is called every 256 polls from `net_poll()`.
+
+Last reviewed: 2026-07-22

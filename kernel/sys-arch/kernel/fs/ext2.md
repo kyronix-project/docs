@@ -1,41 +1,41 @@
 # ext2
 
-This document describes the ext2 filesystem implementation in the Kyronix kernel.
+This document describes the ext2 filesystem driver in the Kyronix kernel. It is the child of [Filesystems](sys-arch/kernel/fs/index.md).
+
+## Source
+
+`kernel/fs/ext2.c`
 
 ## Overview
 
-Kyronix includes an ext2 filesystem driver for reading and writing ext2-formatted disk partitions. ext2 is used as the primary disk-backed filesystem for the root partition.
+The ext2 driver provides read/write access to ext2/3 filesystems. It is the primary disk-based filesystem used for the root partition.
 
 ## Features
 
-- Read and write support for regular files and directories
-- Symlink support
+- Block size: 4096 bytes
+- Inode-based file storage
+- Directory entries with inode references
+- Symbolic link support
+- File creation, deletion, renaming
 - Permission bits (mode, uid, gid)
-- File size up to the ext2 limit
-- Block-based allocation
 
-## Integration
+## Mount Process
 
-The ext2 driver registers as a filesystem driver via `vfs_register_fs()`. During boot:
+1. Read superblock from block device
+2. Validate magic number and block size
+3. Initialize block and inode bitmaps
+4. Mount at specified path
 
-1. `pci_enumerate()` discovers block devices
-2. `ahci_init()` initializes SATA/AHCI controllers
-3. The ext2 driver checks each block device for a valid ext2 superblock
-4. If found, it mounts the filesystem and populates the VFS tree
+## Block Allocation
 
-## Disk I/O
+The driver maintains block and inode bitmaps. Free blocks are found via linear scan of the bitmap. Block groups are used to distribute metadata across the disk.
 
-ext2 reads and writes are performed through the block device layer, which provides:
+## Registration
 
-- `block_read(dev, buf, sector, count)` -- read sectors
-- `block_write(dev, buf, sector, count)` -- write sectors
-- Sector size: 512 bytes (standard)
+```c
+ext2_init();  // Register ext2 filesystem driver
+```
 
-## Limitations
+After registration, the kernel attempts to mount ext2 on block devices during boot.
 
-- No journaling (ext2, not ext3/ext4)
-- No extended attributes
-- No per-directory index
-- Read-write support is functional but may not handle all edge cases
-
-> **Note:** For the initial boot, the root filesystem can also be provided as a CPIO initrd, bypassing ext2 entirely.
+Last reviewed: 2026-07-22

@@ -1,81 +1,71 @@
 # Memory Management Syscalls
 
-This document describes the memory-related syscalls in the Kyronix kernel.
+This document describes the memory management system calls (syscalls) in the Kyronix kernel. It is the child of [Syscalls](index.md).
 
-## Syscalls
+## Syscall Table
 
-| Syscall | Number | Description |
-|---------|--------|-------------|
-| `mmap` | 9 | Map files or anonymous memory into address space |
-| `mprotect` | 10 | Change memory protection |
-| `munmap` | 11 | Unmap memory region |
-| `brk` | 12 | Change data segment size |
-| `mremap` | 25 | Remap a memory region |
-| `madvise` | 28 | Give advice about memory usage |
+- 9 `mmap` - Map memory or files into address space
+- 10 `mprotect` - Set memory protection on a region
+- 11 `munmap` - Unmap memory from address space
+- 12 `brk` - Change data segment size
 
-## mmap
+- 25 `mremap` - Remap a virtual memory area (VMA)
+- 26 `msync` - Synchronize memory with storage (noop for ramfs)
+- 27 `mincore` - Determine page residency in memory
+- 28 `madvise` - Provide advice about memory usage (noop)
 
-`mmap(addr, length, prot, flags, fd, offset)` maps memory into the process address space.
+- 29 `shmget` - Get System V shared memory segment
+- 30 `shmat` - Attach shared memory to address space
+- 31 `shmctl` - Control shared memory operations
+- 67 `shmdt` - Detach shared memory from address space
 
-### Flags
+## mmap Flags
 
-| Flag | Description |
-|------|-------------|
-| `MAP_SHARED` | Shared mapping (changes visible to other processes) |
-| `MAP_PRIVATE` | Private mapping (copy-on-write) |
-| `MAP_ANONYMOUS` | Anonymous memory (no file backing) |
-| `MAP_FIXED` | Replace existing mapping at addr |
-| `MAP_FIXED_NOREPLACE` | Map at addr without replacing |
+The `mmap` syscall accepts the following flags:
 
-### Mapping Types
+- `MAP_ANON` - Create an anonymous mapping (not backed by a file)
+- `MAP_FIXED` - Place the mapping at the exact address specified
+- `MAP_PRIVATE` - Create a private copy-on-write (COW) mapping
+- `MAP_SHARED` - Create a shared mapping visible to other processes
 
-1. **Anonymous (`MAP_ANON`):** Fresh zeroed pages from PMM
-2. **File-backed private (`MAP_PRIVATE`):** Copies file data into fresh physical pages
-3. **Device memory:** Custom mmap for UIO physical BAR mapping
+## mmap Details
 
-### VMA Tracking
+The `mmap` syscall uses `mmap_pick_addr()` to select a virtual address for anonymous mappings. The address selection uses a bump allocator that starts at:
 
-Each mmap creates a VMA entry tracking the address range, protection, and ownership. VMAs are used for demand paging and proper cleanup on munmap.
+```
+p->mmap_bump = 0x0000500000000000 + random_offset
+```
 
-## munmap
+The `mmap` implementation supports:
 
-`munmap(addr, length)` removes a memory mapping:
+- Anonymous mappings (file descriptor is -1)
+- File-backed mappings (valid file descriptor)
+- Character device custom mappings (User I/O (UIO))
 
-1. Remove overlapping VMAs via `vma_remove()`
-2. For pages with `free_on_unmap`, unmap and free the physical pages
-3. Flush TLB with `invlpg`
+## brk Details
 
-## mprotect
+The `brk` syscall implements the classic break mechanism for heap management:
 
-`mprotect(addr, length, prot)` changes memory protection:
+- Operates with page-granularity (minimum allocation is one page)
+- Allocates zeroed pages via `pmm_alloc_zeroed()`
+- Tracks `pages_alloc` and `pages_freed` counters
+- Expands the data segment by mapping new pages
+- Contracts the data segment by unmapping pages
 
-1. Validate the range covers existing VMAs
-2. Split VMAs at range boundaries
-3. Re-add VMAs with the new protection flags
-4. Update page table entries via `vmm_protect()`
+## mprotect Details
 
-## brk
+The `mprotect` syscall changes both:
 
-`brk(addr)` adjusts the program break (heap end):
+- Virtual Memory Area (VMA) metadata (protection flags)
+- Page table entries (hardware-level permissions)
 
-- If `addr > current brk`: allocates new pages via `pmm_alloc()` and maps them
-- If `addr < current brk`: frees pages and unmaps them
-- Returns the new break address
+## Shared Memory (SHM)
 
-## mremap
+The SHM syscalls implement System V shared memory with the following characteristics:
 
-`mremap(old_addr, old_size, new_size, flags)` remaps a memory region:
+- Requires `JAILF_IPC` flag for jail isolation
+- Maximum of 64 shared memory segments per process
+- Maximum of 4096 pages (16 MiB at 4 KiB pages) per segment
+- Supports attach, detach, and control operations
 
-- `MREMAP_MAYMOVE`: allows moving the region
-- `MREMAP_FIXED`: maps to a specific address
-
-Copies old pages to the new location if moved.
-
-## Memory Accounting
-
-Each process tracks:
-
-- `pages_alloc` -- pages allocated via brk/mmap
-- `pages_freed` -- pages freed via munmap/shrink brk
-
-These are used for memory usage reporting.
+Last reviewed: 2026-07-22

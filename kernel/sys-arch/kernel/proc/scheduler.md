@@ -1,64 +1,59 @@
 # Scheduler
 
-This document describes the preemptive scheduler in the Kyronix kernel.
+This document describes the scheduler in the Kyronix kernel. It is the child of [Process Management](sys-arch/kernel/proc/index.md).
 
-## Overview
+## Source
 
-Kyronix uses a simple, preemptive round-robin scheduler with per-CPU idle processes. The scheduler is driven by timer interrupts (PIT and LAPIC timer) at approximately 250 Hz.
+`kernel/proc/proc.c`, `kernel/proc/sched.S`
 
-## Scheduling Algorithm
+## Algorithm
 
-The scheduler uses a 64-bit bitmask (`g_ready_mask`) to track which process slots are ready to run. The scheduling decision is:
+The scheduler implements **per-CPU round-robin with lock-free bitmap scanning**. The `g_ready_mask` 64-bit bitmask enables O(1) next-process selection via `__builtin_ctzll` (count trailing zeros).
 
-1. Scan the bitmask from the last-scheduled position (round-robin)
-2. Find the first ready process that is not the current process
-3. Atomically transition the process from `PROC_READY` to `PROC_RUNNING` via CAS
-4. Context-switch to the selected process
+## Key Functions
 
-## Context Switch
+| Function | Description |
+|---|---|
+| `proc_next_ready(skip)` | Find next ready process via bitmap scan |
+| `sched_claim_next(skip)` | CAS-based claim (READY -> RUNNING) |
+| `sched_yield_blocking()` | Voluntary yield on block |
+| `sched_switch(next)` | Context switch (assembly) |
+| `proc_idle_until_ready(skip)` | Busy-wait for ready process |
+| `proc_create_idle(cpu_id, entry)` | Create idle process for a CPU |
 
-The context switch is performed by `sched_switch()` (implemented in `sched.S`), which:
+## Context Switch (`sched_switch`)
 
-1. Saves the current process's callee-saved registers and FPU state
-2. Loads the next process's callee-saved registers and FPU state
-3. Switches the kernel stack pointer
-4. Switches the address space (CR3) if different
-5. Updates per-CPU data (current process, file descriptor table)
+The context switch in `sched.S` performs:
 
-## Preemption
-
-Preemption occurs on timer interrupts (IRQ 0 or LAPIC timer). The interrupt handler checks:
-
-1. Is the interrupted context a userspace process?
-2. Is the process in `PROC_RUNNING` state?
-3. Is there another ready process?
-
-If all conditions are met, the scheduler picks the next ready process and context-switches.
-
-## Blocking
-
-`sched_yield_blocking()` is used when a process needs to block:
-
-1. Set process state to `PROC_WAITING`
-2. Clear the ready bit
-3. Pick the next ready process (or the CPU's idle process)
-4. Context-switch to the selected process
-5. On wakeup, restore `PROC_RUNNING` state
-
-## Idle Process
-
-Each CPU has an idle process that runs when no other process is ready. The idle process runs with interrupts enabled and halts the CPU (`sti; hlt`) to save power.
+1. Save callee-saved registers (RBX, RBP, R12-R15)
+2. Save FPU/SSE state via `fxsave64`
+3. Save FS base via `rdmsr(IA32_FS_BASE)`
+4. Save kernel stack pointer (`kstack_rsp`) and user RSP
+5. Load next process's kernel stack, FS base, user RSP
+6. Switch address space via `vmm_switch(next->space)` (CR3)
+7. Restore FPU/SSE state via `fxrstor64`
+8. Pop callee-saved registers and return
 
 ## SMP Scheduling
 
-Each CPU independently schedules from the shared `g_ready_mask`. The round-robin position is tracked per-CPU (`g_last_scheduled[cpu_id]`) to reduce contention.
+Each CPU runs its own scheduling loop (`ap_sched_loop`):
 
-## Timers
+1. Try `sched_claim_next(idle)` -- CAS from READY to RUNNING
+2. If found: switch from idle to the claimed process
+3. If not found: `sti; hlt` (halt until next interrupt)
 
-The following per-process timers are checked on each tick:
+Preemption occurs on both PIC IRQ 0 and LAPIC timer tick (vector 224). If a higher-priority process is found via `sched_claim_next`, the current process is preempted.
 
-| Timer | Description |
-|-------|-------------|
-| `wakeup_tick` | nanosleep/clock_nanosleep wakeup time |
-| `alarm_tick` | POSIX alarm() expiry |
-| `itimer_value_ms` / `itimer_interval_ms` | POSIX interval timer (ITIMER_REAL) |
+## Kernel Stack Layout
+
+Each process gets 16 pages (64 KiB) of kernel stack plus 1 guard page:
+
+- Guard page: unmapped (detects overflow)
+- Usable stack: 16 pages mapped with `VMM_KDATA`
+- Virtual base: `0xffff920000000000` (bump-allocated)
+
+## FPU State
+
+Each process has 512 bytes of FPU/SSE state (`fpu_state`) at offset 3328, saved/restored on every context switch via `fxsave64`/`fxrstor64`. Initialized with FCW=`0x037F` and MXCSR=`0x1F80` (all exceptions masked).
+
+Last reviewed: 2026-07-22

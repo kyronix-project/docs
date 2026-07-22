@@ -1,75 +1,52 @@
-# Initialization
+# Kernel Initialization
 
-This document describes the boot sequence and subsystem initialization in the Kyronix kernel.
+This document describes the detailed kernel initialization sequence in the Kyronix kernel. It is the child of [Kernel Implementation Notes](index.md).
 
-## Boot Sequence
+The `kmain()` function executes a nine-phase initialization sequence that brings up all kernel subsystems from early hardware detection through to the first userspace process execution.
 
-The kernel boots via the Limine protocol v3. Limine calls `kmain()` after loading the kernel ELF and setting up the environment.
+## Initialization Phases
 
-### Phase 1: Early Hardware Setup
+1. **Phase 1 — Early console and core tables:** `serial_init`, `printf` setup, Global Descriptor Table (GDT) initialization (`gdt_init`), Interrupt Descriptor Table (IDT) initialization (`idt_init`), and keyboard initialization (`kbd_init`).
 
-1. **Serial console** (`serial_init(COM1)`) -- Initialize UART 16550 at 115200 baud
-2. **GDT** (`gdt_init()`) -- Set up Global Descriptor Table with kernel/user segments and TSS
-3. **IDT** (`idt_init()`) -- Set up Interrupt Descriptor Table, remap PIC to vectors 32-47
-4. **Keyboard** (`kbd_init()`) -- Initialize PS/2 keyboard controller
+2. **Phase 2 — Boot protocol validation:** Validate Limine boot protocol responses, compute `kernel_end_phys`, and configure the bootstrap processor (BSP) Model-Specific Registers (MSRs) via `g_cpu_local[0]`.
 
-### Phase 2: Memory Initialization
+3. **Phase 3 — Core memory and processor setup:** Physical Memory Manager initialization (`pmm_init`), framebuffer initialization (`fb_init`), Virtual Memory Manager initialization (`vmm_init`), Local APIC (Advanced Programmable Interrupt Controller) initialization (`lapic_init`), Symmetric Multi-Processing initialization (`smp_init`), and Supervisor Mode Execution Prevention (SMEP) enable.
 
-5. **PMM** (`pmm_init(mmap, hhdm)`) -- Initialize bitmap-based physical page allocator from Limine memory map
-6. **Framebuffer** (`fb_init()`) -- Store framebuffer info from Limine
-7. **VMM** (`vmm_init()`) -- Enable NX bit, initialize kernel address space
+4. **Phase 4 — Kernel services:** Kernel heap initialization (`heap_init`), system call initialization (`syscall_init`), process subsystem initialization (`proc_init`), jail initialization (`jail_init`), Virtual File System initialization (`vfs_init`), and root mount verification.
 
-### Phase 3: Multiprocessor and Advanced Features
+5. **Phase 5 — Hardware enumeration:** PCI enumeration (`pci_enumerate`), Advanced Configuration and Power Interface (ACPI) initialization (`acpi_init`), block device initialization (`block_init`), AHCI (Advanced Host Controller Interface) initialization (`ahci_init`), VirtIO network initialization (`virtnet_init`), and network stack initialization (`net_init`).
 
-8. **LAPIC** (`lapic_init()`) -- Map Local APIC MMIO, enable it
-9. **SMP** (`smp_init()`) -- Discover CPUs from Limine SMP response
-10. **SMEP** -- Enable Supervisor Mode Execution Prevention (CR4 bit 20, if supported)
-11. **Heap** (`heap_init()`) -- Initialize kernel heap at 0xffff910000000000
+6. **Phase 6 — User interface devices:** User Interface (UI) initialization (`uio_init`), framebuffer device initialization (`fbdev_init`), input subsystem initialization (`input_init`), virtual terminal initialization (`vt_init`), Programmable Interval Timer (PIT) initialization (`pit_init`), and LAPIC timer calibration (`lapic_calibrate_timer`).
 
-### Phase 4: System Services
+7. **Phase 7 — Application processor boot and entropy:** BSP idle process creation, Application Processor (AP) boot (`smp_boot_aps`), and Cryptographically Secure Pseudo-Random Number Generator (CSPRNG) initialization with RDRAND instruction and Timestamp Counter (TSC) fallback.
 
-12. **Syscalls** (`syscall_init()`) -- Configure SYSCALL/SYSRET MSRs, enable SSE
-13. **Process table** (`proc_init()`) -- Initialize 64-slot process table
-14. **Jails** (`jail_init()`) -- Initialize jail subsystem
-15. **VFS** (`vfs_init()`) -- Create root filesystem tree, mount /proc, /dev
+8. **Phase 8 — Interrupts and self-tests:** `sti` (Set Interrupt Flag), PS/2 mouse initialization (`ps2mouse_init`), and self-tests for the PMM, VMM, and heap subsystems.
 
-### Phase 5: Device Drivers
+9. **Phase 9 — Filesystem and init:** ext2 filesystem initialization (`ext2_init`), root mount, initial ramdisk (initrd) load, Filesystem Table (fstab) mount, and execution of `/init`.
 
-16. **PCI** (`pci_enumerate()`) -- Scan PCI bus, discover devices
-17. **ACPI** (`acpi_init(rsdp)`) -- Parse ACPI tables
-18. **Block devices** (`block_init()`, `ahci_init()`) -- Initialize SATA/AHCI
-19. **Network** (`virtnet_init()`, `net_init()`) -- VirtIO-net + lwIP
+## Self-Tests
 
-### Phase 6: Userspace I/O
+The following self-tests execute during Phase 8 to verify core subsystem integrity.
 
-20. **UIO** (`uio_init()`) -- Userspace I/O PCI BAR mapping
-21. **Framebuffer device** (`fbdev_init()`) -- Create /dev/fb0
-22. **Input** (`input_init()`) -- Initialize input event system
-23. **TTY** (`vt_init()`) -- Initialize virtual terminals
+### PMM Self-Test
 
-### Phase 7: Timers and SMP Boot
+1. Allocate four physical pages.
+2. Map each page to a virtual address via `phys_to_virt`.
+3. Write the constant `0xDEADBEEFCAFEBABE` to each page.
+4. Verify that each page contains a unique allocation (distinct physical addresses).
 
-24. **PIT** (`pit_init()`) -- Program PIT at ~250 Hz, read RTC for epoch
-25. **LAPIC timer** (`lapic_calibrate_timer()`) -- Calibrate against PIT
-26. **AP boot** (`smp_boot_aps()`) -- Boot Application Processors
+### VMM Self-Test
 
-### Phase 8: Random and Self-Tests
+1. Map a single page at virtual address `0xffff900000001000`.
+2. Write the constant `0xC0FFEE00DEADC0DE` to the mapped page.
+3. Read back and verify the written value.
+4. Unmap the page.
 
-27. **CSPRNG** -- Initialize ChaCha20-based CSPRNG from RDRAND or RDTSC
-28. **Self-tests** -- Run PMM/VMM/heap self-tests
+### Heap Self-Test
 
-### Phase 9: Root Filesystem and Init
+1. Allocate buffers of 64, 128, and 256 bytes.
+2. Fill the 64-byte buffer with `0xAA`, the 128-byte buffer with `0xBB`, and the 256-byte buffer with `0xCC`.
+3. Verify each buffer contains the expected fill pattern.
+4. Test `krealloc` by reallocating each buffer and verifying content preservation.
 
-29. **Root FS** -- Mount ext2 from disk or CPIO initrd
-30. **Execute /init** -- Run `/init` (or `/sbin/init` or `/bin/init`)
-31. **Halt** -- BSP enters idle loop
-
-## Configuration
-
-The kernel is configured via `kernel/config.h` (generated from Kconfig):
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `CONFIG_KMEMLEAK` | y | Kernel memory leak detector |
-| `CONFIG_SERIAL_CONSOLE` | y | Serial console output |
-| `CONFIG_LOG_LEVEL` | 1 | Log level (0=error, 1=warn, 2=info, 3=debug) |
+Last reviewed: 2026-07-22

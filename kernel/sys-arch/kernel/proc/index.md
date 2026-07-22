@@ -1,60 +1,43 @@
 # Process Management
 
-This section describes the process management subsystem of the Kyronix kernel.
+This document describes the process management subsystem of the Kyronix kernel. It is the child of [Kernel](sys-arch/kernel/index.md) and parent of process management component documents.
 
 ## Components
 
-- [Scheduler](scheduler.md) -- preemptive time-sliced scheduling
-- [SMP](smp.md) -- Symmetric Multi-Processing support
-- [Signal Handling](signal.md) -- POSIX signal delivery
-- [Jail](jail.md) -- process sandboxing/isolation
+| Component | Source | Description |
+|---|---|---|
+| Process Table | `proc/proc.c` | Process allocation, lifecycle, scheduling |
+| Scheduler | `proc/sched.S` | Context switch (assembly) |
+| SMP | `proc/smp.c` | CPU enumeration, AP boot |
+| Signals | `proc/signal.c` | POSIX signal delivery |
+| Jails | `proc/jail.c` | Sandbox/container isolation |
+| ELF Loader | `exec/elf.c` | 64-bit ELF parsing and loading |
+| Process Exec | `exec/process.c` | Exec, stack setup, userspace entry |
 
 ## Process States
 
-| State | Description |
-|-------|-------------|
-| `PROC_UNUSED` | Slot is free |
-| `PROC_READY` | Process is ready to run |
-| `PROC_RUNNING` | Process is currently executing |
-| `PROC_WAITING` | Process is blocked (waiting for I/O, signal, etc.) |
-| `PROC_ZOMBIE` | Process has exited, awaiting parent wait() |
-| `PROC_DYING` | Process is being cleaned up |
-| `PROC_STOPPED` | Process is stopped (job control, SIGSTOP) |
+| State | Value | Description |
+|---|---|---|
+| `PROC_UNUSED` | 0 | Slot is free |
+| `PROC_RUNNING` | 1 | Currently executing on a CPU |
+| `PROC_READY` | 2 | Eligible to run, waiting for time slice |
+| `PROC_WAITING` | 3 | Blocked (I/O, signal, etc.) |
+| `PROC_ZOMBIE` | 4 | Exited, not yet reaped |
+| `PROC_DYING` | 5 | In the process of exiting |
+| `PROC_STOPPED` | 6 | Job-control stopped |
 
 ## Process Table
 
-The kernel maintains a fixed-size process table with 64 slots (`PROC_MAX`). Each process is represented by a `proc_t` structure containing:
+- Fixed array of 64 slots (`PROC_MAX`)
+- Spinlock-protected allocation
+- PID = slot index + 1 (PID 0 reserved for idle)
 
-- Process IDs (pid, ppid, pgid)
-- Address space (`vmm_space_t *space`)
-- Kernel stack (16 pages, with guard page)
-- File descriptor table (up to 1024 FDs)
-- Signal state (pending signals, mask, actions)
-- Credentials (uid, gid, euid, egid, etc.)
-- Jail membership
-- Ptrace state
-- FPU state (512 bytes, FXSAVE format)
+## Global Bitmasks
 
-## Key Operations
+| Bitmask | Description |
+|---|---|
+| `g_ready_mask` | Processes in READY state (eligible for scheduling) |
+| `g_used_mask` | All allocated process slots |
+| `g_timer_mask` | Processes with active timers |
 
-| Function | Description |
-|----------|-------------|
-| `proc_init()` | Initialize the process table |
-| `proc_alloc(ppid)` | Allocate a new process slot |
-| `proc_find(pid)` | Find a process by PID |
-| `proc_create_idle(cpu_id, entry)` | Create an idle process for a CPU |
-| `proc_do_exit(code)` | Terminate the current process |
-| `proc_defer_thread_reap(p)` | Defer cleanup of a dead thread |
-
-## Reference Counting
-
-Processes use atomic reference counting (`proc_ref` / `proc_unref`). When the reference count drops to 0, the kernel stack is freed and the slot is released.
-
-## Process Limits
-
-| Resource | Limit |
-|----------|-------|
-| Max processes | 64 |
-| Kernel stack | 16 pages (64 KiB) per process |
-| Max file descriptors | 1024 per process |
-| Max VMA regions | 2048 per address space |
+Last reviewed: 2026-07-22

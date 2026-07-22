@@ -69,6 +69,8 @@
 - [Filesystems](sys-arch/kernel/fs/index.md)
   - [VFS](sys-arch/kernel/fs/vfs.md)
   - [ext2](sys-arch/kernel/fs/ext2.md)
+  - [FAT32](sys-arch/kernel/fs/fat32.md)
+  - [CPIO](sys-arch/kernel/fs/cpio.md)
   - [procfs](sys-arch/kernel/fs/procfs.md)
   - [devfs](sys-arch/kernel/fs/devfs.md)
   - [eventfd](sys-arch/kernel/fs/eventfd.md)
@@ -103,31 +105,6 @@
   - [Epoll](sys-arch/kernel/syscall/epoll.md)
   - [Futex](sys-arch/kernel/syscall/futex.md)
   - [Ptrace](sys-arch/kernel/syscall/ptrace.md)
-
-### Libraries
-
-- [Libraries](sys-arch/lib/index.md)
-  - [Frigg](sys-arch/lib/frigg.md)
-  - [Bragi](sys-arch/lib/bragi.md)
-  - [Hel](sys-arch/lib/hel.md)
-  - [Helix](sys-arch/lib/helix.md)
-  - [libasync](sys-arch/lib/libasync.md)
-  - [C Library](sys-arch/lib/libc/index.md)
-    - [mlibc](sys-arch/lib/libc/mlibc.md)
-    - [Syscall Wrappers](sys-arch/lib/libc/syscalls.md)
-
-### Servers
-
-- [Servers](sys-arch/servers/index.md)
-  - [Init](sys-arch/servers/init.md)
-  - [mbus](sys-arch/servers/mbus.md)
-  - [POSIX Subsystem](sys-arch/servers/posix-subsystem.md)
-  - [udev](sys-arch/servers/udev.md)
-
-### User-Space Drivers
-
-- [Drivers](sys-arch/drivers/index.md)
-  - [libblockfs](sys-arch/drivers/libblockfs.md)
 
 ## Implementation Notes
 

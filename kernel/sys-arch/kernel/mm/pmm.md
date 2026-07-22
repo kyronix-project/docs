@@ -1,52 +1,68 @@
-# Physical Memory Manager (PMM)
+# PMM
 
-This document describes the physical page allocator in the Kyronix kernel.
+This document describes the Physical Memory Manager (PMM) in the Kyronix kernel. It is the child of [Memory Management](sys-arch/kernel/mm/index.md).
+
+## Source
+
+`kernel/mm/pmm.c`, `kernel/mm/pmm.h`
 
 ## Overview
 
-The PMM manages physical memory using a bitmap-based allocator. One bit per 4 KiB page: 1 = free, 0 = used.
+The PMM manages physical page frames using the LL-Free lock-free allocator. It provides allocation and deallocation of 4 KiB page frames, with support for contiguous multi-page allocations.
+
+## Key Constants
+
+| Constant | Value | Description |
+|---|---|---|
+| `PAGE_SIZE` | 4096 | Size of one page frame |
+| `PAGE_SHIFT` | 12 | Bits to shift for page count |
+| `ZPOOL_SIZE` | 32 | Pre-allocated zeroed page pool size |
+
+## Macros
+
+| Macro | Description |
+|---|---|
+| `PAGE_ALIGN_UP(x)` | Round up to next page boundary |
+| `PAGE_ALIGN_DOWN(x)` | Round down to page boundary |
+| `phys_to_virt(phys)` | Physical to virtual via HHDM offset |
+| `virt_to_phys(virt)` | Virtual to physical via HHDM offset |
+
+## Functions
+
+| Function | Description |
+|---|---|
+| `pmm_init(memmap, hhdm_offset, kernel_end)` | Initialize from Limine memory map |
+| `pmm_alloc()` | Allocate one frame (order 0) |
+| `pmm_alloc_zeroed()` | Allocate one zeroed frame (pool or alloc+memset) |
+| `pmm_alloc_contiguous(n)` | Allocate n physically contiguous pages |
+| `pmm_free(phys)` | Return a frame to the allocator |
+| `pmm_free_pages()` | Return count of free frames |
+| `pmm_total_pages()` | Return total managed frames |
+| `pmm_usable_pages()` | Return frames marked usable by Limine |
 
 ## Initialization
 
-`pmm_init()` is called during boot with the Limine memory map and HHDM offset:
+1. Parse Limine memory map to find highest usable address
+2. Compute total frames from usable regions
+3. Allocate LL-Free metadata from the largest usable region (after `kernel_end_phys`)
+4. Initialize LL-Free with `LLFREE_INIT_FREE` (all frames free)
+5. Fill the zero-page pool (32 pre-allocated zeroed pages)
 
-1. Scans the Limine memory map to find the highest usable physical address
-2. Allocates a bitmap from the first sufficiently large usable region
-3. Marks all usable pages as free (bit = 1)
-4. Marks the bitmap pages themselves as used (bit = 0)
+Requires at least 512 managed frames.
 
-## Allocation
+## Zero-Page Pool
 
-| Function | Description |
-|----------|-------------|
-| `pmm_alloc()` | Allocate a single 4 KiB page |
-| `pmm_alloc_zeroed()` | Allocate and zero-fill a page |
-| `pmm_alloc_contiguous(n)` | Allocate n physically-consecutive pages |
-| `pmm_free(phys)` | Free a previously allocated page |
+The PMM maintains a stack of 32 pre-allocated zeroed pages (`g_zpool`). `pmm_alloc_zeroed()` first checks this pool; if empty, falls back to `pmm_alloc()` + `memset(0)`. This avoids repeated zeroing for common allocations.
 
-`pmm_alloc()` uses `__builtin_ctzll` (count trailing zeros) to find the first free bit in the bitmap, giving O(n/64) worst-case performance.
+## LL-Free Integration
 
-`pmm_alloc_contiguous()` performs a brute-force linear scan for N consecutive free pages.
+The PMM delegates to the LL-Free allocator for all frame management. LL-Free is a three-tier lock-free buddy-like allocator with CPU-local reservations for scalability:
 
-## Statistics
+- **Frame**: 4 KiB base unit
+- **Child**: 512 frames = 2 MiB (huge page boundary)
+- **Tree**: 8 children = 4096 frames = 16 MiB
+- **Local**: Per-CPU reservation of one tree
 
-| Function | Description |
-|----------|-------------|
-| `pmm_free_pages()` | Number of currently free pages |
-| `pmm_total_pages()` | Total pages in the system |
-| `pmm_usable_pages()` | Total usable pages |
-| `pmm_alloc_total()` | Lifetime total pages allocated |
-| `pmm_free_total()` | Lifetime total pages freed |
+Maximum allocatable order is 12 (4096 frames = 16 MiB contiguous).
 
-## Address Conversion
-
-| Function | Description |
-|----------|-------------|
-| `phys_to_virt(phys)` | Convert physical address to virtual (HHDM offset) |
-| `virt_to_phys(virt)` | Convert virtual address to physical |
-
-These are O(1) offset-based conversions using the HHDM offset provided by Limine.
-
-## Integration
-
-The PMM integrates with `CONFIG_KMEMLEAK` (if enabled) to track all page allocations for leak detection via `kmemleak_track_page` / `kmemleak_untrack_page`.
+Last reviewed: 2026-07-22

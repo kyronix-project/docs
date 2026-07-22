@@ -1,29 +1,21 @@
 # System Architecture
 
-This section describes the high-level architecture of the Kyronix kernel and its surrounding components. Kyronix is a monolithic, hybrid Linux-compatible operating system targeting x86-64.
+This document describes the high-level architecture of the Kyronix operating system. It is the root of the [System Architecture](sys-arch/index.md) section.
 
-## Design Philosophy
+## System Layers
 
-Kyronix is designed as a Linux-compatible kernel with the following goals:
+The Kyronix system consists of the following layers, from lowest to highest:
 
-- **Linux binary compatibility:** Support for 150+ Linux syscalls, enabling execution of unmodified Linux binaries compiled with musl libc.
-- **Preemptive multitasking:** Time-sliced preemptive scheduling with per-CPU idle processes.
-- **Simplicity:** A straightforward monolithic design without microkernel message passing overhead.
-- **Security:** Built-in jail (sandbox) subsystem for process isolation.
+1. **Kernel** -- Hardware abstraction, memory management, process scheduling, syscalls
+2. **Drivers** -- PCI, ACPI, AHCI, VirtIO, input, framebuffer, TTY, serial
+3. **Filesystems** -- VFS, ext2, procfs, devfs
+4. **Networking** -- lwIP TCP/IP stack, virtio-net interface
 
-## Components
+## Design Principles
 
-See [System Components](components.md) for a detailed overview of all major subsystems.
+- The kernel is hybrid: all basic subsystems run in kernel space with direct hardware access but selected drivers can run in userspace.
+- Syscalls follow the Linux x86_64 ABI for compatibility with Linux user-space programs.
+- Jail-based sandboxing provides process isolation without requiring separate address spaces.
+- The physical memory allocator is lock-free (LL-Free) for scalability on SMP systems.
 
-## Kernel Subsystems
-
-- [Kernel](kernel/index.md) -- core kernel subsystems (boot, arch, mm, proc, fs, drivers, net, syscall)
-
-## Libraries
-
-- [Libraries](lib/index.md) -- kernel and userspace libraries (frigg, bragi, hel, helix, libasync, mlibc)
-
-## Servers and Drivers
-
-- [Servers](servers/index.md) -- userspace server processes (init, mbus, posix-subsystem, udev)
-- [Drivers](drivers/index.md) -- userspace driver framework (libblockfs)
+Last reviewed: 2026-07-22

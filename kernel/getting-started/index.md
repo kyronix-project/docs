@@ -1,54 +1,74 @@
 # Getting Started
 
-This section provides instructions for building and running the Kyronix kernel from source. Kyronix is a hybrid Linux-compatible operating system targeting x86-64, featuring a preemptive scheduler, 150+ Linux-compatible syscalls, and musl libc.
+This document provides an overview of the Kyronix's kernel and instructions for building and running it.
 
-## Prerequisites
+## What is Kyronix's kernel
 
-Before building, ensure you have the following tools installed on your host system:
+Kyronix's kernel(aka `k9`) is a POSIX-like operating system kernel for the x86_64 architecture. It implements a hybrid design with a custom jail-based sandboxing subsystem, lwIP-based networking, and an ext2 root filesystem.
 
-- `gcc` or `x86_64-elf-gcc` cross-compiler
-- `nasm` (assembler)
-- `musl-gcc` (for user-space binaries)
-- `xorriso` (for ISO creation)
-- `qemu-system-x86_64` (for testing, optional)
-- `make`
+## Key Features
 
-Alternatively, you can use the containerized build environment, which requires only `podman` or `docker`.
+- Limine v3 boot protocol support (BIOS and UEFI)
+- Lock-free physical memory allocator (LL-Free)
+- Virtual memory with 4-level page tables and demand paging
+- Process management with round-robin scheduling
+- SMP support (up to `MAX_CPUS` cores)
+- POSIX signals, file descriptors, and process management
+- Jail-based sandboxing with filesystem, PID, IPC, and privilege isolation
+- lwIP TCP/IP stack over virtio-net
+- ext2, FAT32, and CPIO filesystems
+- ChaCha20-based CSPRNG
+- Kernel memory leak detector (`kmemleak`)
 
 ## Quick Start
 
-1. Clone the repository:
+1. Build the kernel and bootable ISO:
 
 ```bash
-git clone https://github.com/kyronix-project/kyronix.git
-cd kyronix
+make iso
 ```
 
-2. Build the kernel and user-space:
-
-```bash
-make
-```
-
-3. Run in QEMU:
+2. Run in QEMU with KVM acceleration:
 
 ```bash
 make run
 ```
 
-## Build Options
+3. For serial-only output:
 
-Kyronix supports multiple build and run configurations. See the following sections for details:
+```bash
+make run-serial
+```
 
-- [Building with cbuildrt](../building/with-cbuildrt.md)
-- [Building with Docker/Podman](../building/with-docker.md)
-- [Building without containers](../building/without-containers.md)
+## Architecture
 
-## Documentation Structure
+The kernel targets x86_64 and uses the following design:
 
-The documentation is organized into the following sections:
+- **Boot**: Limine v3 protocol provides memory map, framebuffer, HHDM, RSDP, and kernel address information.
+- **Memory**: LL-Free lock-free allocator for physical frames; 4-level page tables for virtual memory; first-fit heap allocator.
+- **Scheduling**: Per-CPU round-robin with lock-free bitmap scanning via `g_ready_mask`.
+- **Syscalls**: Linux x86_64 ABI-compatible syscall interface via `SYSCALL`/`SYSRET`.
+- **Networking**: lwIP stack connected to virtio-net with static QEMU user-mode IP (10.0.2.15/24).
 
-- [System Architecture](../sys-arch/index.md) -- high-level design and component overview
-- [Implementation Notes](../impl-notes/index.md) -- detailed kernel and driver internals
-- [Reference](../reference/index.md) -- syscall and API reference
-- [Contributing](../contributing/index.md) -- guidelines for contributing to the project
+## Directory Structure
+
+| Path | Description |
+|---|---|
+| `kernel/` | Kernel source (arch, mm, fs, drivers, syscall, proc, net) |
+| `user/` | Userspace programs (shell, utilities) |
+| `rootfs/` | Root filesystem template |
+| `scripts/` | Build scripts and Kconfig tools |
+| `limine/` | Limine bootloader files |
+| `dist/` | Build output directory |
+
+## Testing
+
+Run the full test suite:
+
+```bash
+make test-iso && make test-run-log
+```
+
+This boots the kernel with a `testrunner` init program, executes test binaries, and reports pass/fail status via serial output. Memory leak detection is performed via the `kmemleak` subsystem.
+
+Last reviewed: 2026-07-22

@@ -1,72 +1,73 @@
 # Scheduling
 
-This document describes the internals of the Kyronix scheduler.
+This document describes the scheduling implementation in the Kyronix kernel. It is the child of [Kernel Implementation Notes](index.md).
+
+The Kyronix kernel uses a per-CPU round-robin scheduler with lock-free bitmap-based ready-queue selection and hardware-assisted FPU context switching.
+
+## Scheduling Algorithm
+
+### Ready Queue and Bitmap
+
+- Each CPU maintains a 64-bit ready bitmask (`g_ready_mask`) representing the priority levels with at least one runnable thread.
+- Next-thread selection uses `__builtin_ctzll` (Count Trailing Zeros, Long Long) on `g_ready_mask` to locate the lowest-numbered set bit in O(1) time.
+- Each priority level maps to a linked list of threads in the READY state.
+
+### Lock-Free Claim
+
+- `sched_claim_next` transitions a thread from READY to RUNNING using a Compare-And-Swap (CAS) operation, eliminating lock contention on the common path.
+- The CAS atomically marks the thread as RUNNING before any scheduler state is visible to other processors.
+
+### Round-Robin Fairness
+
+- Per-CPU arrays (`g_last_scheduled`) track the last scheduled thread per priority level to enforce round-robin fairness across threads of equal priority.
 
 ## Context Switch
 
-The context switch is implemented in assembly (`sched.S`) and performs:
+The context switch performs the following operations in sequence:
 
-### Process Switch (`sched_switch(next)`)
-
-1. Save callee-saved registers (rbx, rbp, r12-r15) of the current process
-2. Save FPU state (FXSAVE) of the current process
-3. Switch kernel stack pointer (`rsp`) to the next process's `kstack_rsp`
-4. Restore FPU state (FXRSTOR) of the next process
-5. Restore callee-saved registers of the next process
-6. If the address space changed, load CR3 with the new PML4
-7. Return (which restores RIP from the new stack)
-
-### Per-CPU State Update
-
-After context switch, the following per-CPU state is updated:
-
-```c
-vfs_set_fdtable(next->fds);         // switch FD table
-g_current_space = next->space;      // switch address space
-cpu_set_kernel_stack(next->kstack_top); // update TSS rsp0
-```
-
-## Ready Mask
-
-The scheduler uses a 64-bit atomic bitmask (`g_ready_mask`) to track ready processes:
-
-- Bit N = 1: process slot N is ready to run
-- Bit N = 0: process slot N is not ready
-
-`proc_next_ready()` scans the bitmask from the last-scheduled position using `__builtin_ctzll` to find the next set bit.
+1. Save callee-saved general-purpose registers from the outgoing thread.
+2. Execute `fxsave64` to save the floating-point / SIMD state of the outgoing thread.
+3. Restore callee-saved general-purpose registers for the incoming thread.
+4. Execute `fxrstor64` to restore the floating-point / SIMD state of the incoming thread.
+5. Write the FS base MSR (Model-Specific Register) for the incoming thread's Thread-Local Storage (TLS).
+6. Load CR3 (Control Register 3) to switch to the incoming thread's address space.
 
 ## Preemption
 
-Preemption occurs on timer interrupts (IRQ 0 or LAPIC timer vector 0xE0):
+- Preemption is triggered on Programmable Interval Timer (PIT) IRQ 0 and Local APIC timer interrupt (vector 224).
+- The timer interrupt handler invokes the scheduler to perform a context switch if a higher-priority or equal-priority thread is runnable.
 
-1. Timer interrupt fires
-2. Increment `g_ticks`
-3. Check if interrupted context is a userspace process
-4. If yes, call `proc_next_ready()` to find another ready process
-5. If a different process is found, context-switch to it
+## Application Processor Idle Loop
 
-## Blocking
+Application Processors (APs) execute the following idle loop:
 
-`sched_yield_blocking()` is called when a process needs to wait:
+1. Call `sched_claim_next` to attempt to acquire a runnable thread.
+2. If a thread is claimed, call `sched_switch` to context-switch into it.
+3. If no thread is available, execute `hlt` (Halt) until the next interrupt.
 
-1. Set state to `PROC_WAITING`, clear ready bit
-2. Claim the next ready process (or idle)
-3. Context-switch
-4. On wakeup, restore `PROC_RUNNING`
+## Process States and Transitions
 
-## Idle Loop
+Threads transition through the following states:
 
-Each CPU's idle process runs:
-
-```c
-for (;;) {
-    sti();   // enable interrupts
-    hlt();   // halt until interrupt
-}
+```
+UNUSED -> READY -> RUNNING -> READY
+                       |-> WAITING
+                       |-> ZOMBIE -> DYING
+                       |-> STOPPED
 ```
 
-This allows the CPU to enter a low-power state while waiting for work.
+- `UNUSED` — Thread slot is unallocated.
+- `READY` — Thread is runnable and waiting for CPU time.
+- `RUNNING` — Thread is executing on a CPU.
+- `WAITING` — Thread is blocked on an event (e.g., I/O, sleep).
+- `ZOMBIE` — Thread has exited but its resources have not yet been reclaimed.
+- `DYING` — Thread is in the final stage of resource teardown.
+- `STOPPED` — Thread has been stopped (e.g., via signal).
 
-## Process Reaping
+## Deferred Reaping
 
-Dead processes are reaped via `proc_defer_thread_reap()`. The reaped process's reference count is decremented on the next timer tick, preventing stack-use-after-free.
+- `proc_defer_thread_reap` stores a zombie thread in a pending list for deferred cleanup.
+- The next call to `proc_reap_pending` processes the deferred list and reclaims thread resources.
+- Deferred reaping avoids performing memory deallocation in the interrupt context where the thread transitions to ZOMBIE.
+
+Last reviewed: 2026-07-22

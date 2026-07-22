@@ -1,56 +1,49 @@
 # Pipe
 
-This document describes the pipe and FIFO implementation in the Kyronix kernel.
+This document describes the pipe implementation in the Kyronix kernel. It is the child of [Filesystems](sys-arch/kernel/fs/index.md).
+
+## Source
+
+`kernel/fs/pipe.c`, `kernel/fs/fdpipe.c`
 
 ## Overview
 
-Pipes provide unidirectional inter-process communication (IPC). Data written to the write end is read from the read end in FIFO order.
+Pipes provide unidirectional inter-process communication. The Kyronix kernel implements both anonymous pipes (`pipe`/`pipe2`) and named pipes (FIFOs).
 
-## Structure
+## Syscalls
+
+| Syscall | Number | Description |
+|---|---|---|
+| `pipe` | 22 | Create anonymous pipe |
+| `pipe2` | 293 | Create pipe with flags (O_CLOEXEC, O_NONBLOCK) |
+
+## Data Structure
 
 ```c
 typedef struct {
-    uint8_t *buf;       // ring buffer
-    uint64_t size;      // buffer capacity
-    uint64_t read_pos;  // read position
-    uint64_t write_pos; // write position
-    uint64_t count;     // bytes currently in buffer
-    // synchronization
-    spinlock_t lock;
-    uint32_t semaphore;
-    void *read_waiter;
-    void *write_waiter;
+    uint8_t *buf;        // Ring buffer
+    size_t   size;       // Buffer capacity
+    size_t   read_pos;   // Read position
+    size_t   write_pos;  // Write position
+    size_t   count;      // Bytes available
+    // Synchronization primitives for blocking read/write
 } pipe_t;
 ```
 
 ## Operations
 
-| Operation | Description |
-|-----------|-------------|
-| `write()` | Write data to the pipe. If the pipe is full, blocks until space is available (unless O_NONBLOCK). |
-| `read()` | Read data from the pipe. If the pipe is empty, blocks until data is available (unless O_NONBLOCK). |
-| `close()` | Close one end of the pipe. When all write ends are closed, readers get EOF. When all read ends are closed, writers get SIGPIPE. |
+| Operation | Behavior |
+|---|---|
+| `read()` | Blocks if empty; reads up to requested bytes |
+| `write()` | Blocks if full; writes up to requested bytes |
+| `close()` | Signals EOF to readers/writers |
 
-## Creation
+## Ancillary Data (SCM_RIGHTS)
 
-- `fd_pipe(pipefd[2])` -- create an unnamed pipe pair
-- Named pipes (FIFOs) are supported via the filesystem
+Pipes support file descriptor passing via `SCM_RIGHTS` ancillary data on Unix domain sockets. This enables processes to share file descriptors across address spaces.
 
-## Pipe Pair
+## Blocking
 
-A pipe consists of two `vfs_file_t` entries sharing a single `pipe_t`:
+Read and write operations block the calling process when the pipe is empty (read) or full (write). Blocked processes are moved to `PROC_WAITING` state and woken when data becomes available.
 
-- `pipefd[0]` -- read end
-- `pipefd[1]` -- write end
-
-## Poll Support
-
-Pipes support `poll`/`select`/`epoll`:
-
-- `fd_pollin()` -- true when data is available or write end is closed
-- `fd_pollout()` -- true when space is available or read end is closed
-- `fd_pollhup()` -- true when write end is closed
-
-## Buffer Size
-
-The default pipe buffer size is implementation-defined. The buffer is allocated from the kernel heap.
+Last reviewed: 2026-07-22

@@ -1,38 +1,46 @@
 # Network Interface
 
-This document describes the kyronix_netif adapter that connects VirtIO-net to lwIP.
+This document describes the Kyronix network interface driver in the Kyronix kernel. It is the child of [Networking](sys-arch/kernel/net/index.md).
+
+## Source
+
+`kernel/net/netif/kyronix_netif.c`
 
 ## Overview
 
-The kyronix_netif acts as a bridge between the VirtIO-net hardware driver and the lwIP networking stack. It implements the lwIP `netif` interface.
+The kyronix netif bridges lwIP to the virtio-net hardware. It implements the lwIP `netif` interface for sending and receiving raw Ethernet frames.
 
-## Packet Flow
+## Netif Configuration
 
-### Receive Path
+| Property | Value |
+|---|---|
+| Name | `"e0"` |
+| MTU | 1500 |
+| Output (ARP+IP) | `etharp_output` |
+| Link output | `kyronix_netif_output` |
+| Flags | `NETIF_FLAG_BROADCAST \| NETIF_FLAG_ETHARP \| NETIF_FLAG_LINK_UP \| NETIF_FLAG_UP` |
+| MAC address | From `virtnet_mac()` |
 
-1. VirtIO-net interrupt handler reads a packet from the receive virtqueue
-2. The packet is passed to kyronix_netif
-3. kyronix_netif calls `netif_input()` to deliver to lwIP
-4. lwIP processes the packet through the IP/TCP/UDP stack
+## Functions
 
-### Transmit Path
+| Function | Description |
+|---|---|
+| `kyronix_netif_init(nif)` | Initialize netif (called by `netif_add`) |
+| `kyronix_netif_input(nif, data, len)` | Feed raw Ethernet frame into lwIP |
+| `kyronix_netif_output(nif, p)` | Send pbuf chain via virtio-net |
 
-1. lwIP calls `kyronix_netif_output()` to send a packet
-2. kyronix_netif places the packet in the VirtIO-net transmit virtqueue
-3. VirtIO-net transmits the packet on the wire
+## Receive Path
 
-## Network Configuration
+1. virtio-net driver calls `net_receive(frame, len)`
+2. `net_receive` calls `kyronix_netif_input()`
+3. `kyronix_netif_input` allocates a `pbuf` from `PBUF_POOL`
+4. Copies frame data into pbuf chain
+5. Calls `nif->input()` (which is `ethernet_input`)
 
-The network interface can be configured via:
+## Transmit Path
 
-- DHCP (automatic IP address assignment)
-- Static configuration (manual IP, netmask, gateway)
+1. lwIP calls `kyronix_netif_output(nif, p)`
+2. Gathers pbuf chain into flat buffer (max 1514 bytes)
+3. Calls `virtnet_send(buf, total)`
 
-## Interface Parameters
-
-| Parameter | Description |
-|-----------|-------------|
-| IP address | IPv4 address of the interface |
-| Netmask | Subnet mask |
-| Gateway | Default gateway address |
-| MAC address | Hardware address from VirtIO-net |
+Last reviewed: 2026-07-22

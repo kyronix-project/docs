@@ -1,53 +1,16 @@
 # Protocols
 
-This document describes the IPC and communication protocols used in Kyronix.
+This document describes the protocols supported by the Kyronix kernel. It is the child of [Reference](index.md).
 
-## Kernel-to-Userspace
+## Supported Protocols
 
-### Syscall Interface
+- **Limine v3 boot protocol**: memory map, HHDM (Higher Half Direct Map), framebuffer, modules, RSDP (Root System Description Pointer), SMP (Symmetric Multi-Processing), kernel address.
+- **PCI configuration**: standard I/O configuration space (ports 0xCF8/0xCFC).
+- **ACPI** (Advanced Configuration and Power Interface): RSDP, RSDT/XSDT, MADT (Multiple APIC Description Table), FADT (Fixed ACPI Description Table).
+- **AHCI** (Advanced Host Controller Interface): SATA (Serial ATA) host controller interface.
+- **VirtIO 1.0**: paravirtualized network device.
+- **lwIP TCP/IP** (lightweight IP): IPv4 (Internet Protocol version 4), TCP (Transmission Control Protocol), UDP (User Datagram Protocol), ICMP (Internet Control Message Protocol), ARP (Address Resolution Protocol).
+- **PS/2**: keyboard and mouse input.
+- **Syscall**: AMD64 SYSCALL/SYSRET mechanism.
 
-The primary kernel-userspace interface is the x86-64 `SYSCALL`/`SYSRET` mechanism. Arguments are passed in registers (rdi, rsi, rdx, r10, r8, r9) and the result is returned in rax.
-
-### Signal Delivery
-
-Signals are delivered by modifying the user stack with an `rt_sigframe_t` and redirecting execution to the signal handler.
-
-## Userspace-to-Userspace
-
-### Unix Domain Sockets
-
-Used for IPC between servers and applications:
-
-- `AF_UNIX`, `SOCK_STREAM` or `SOCK_DGRAM`
-- Supports `SCM_RIGHTS` for file descriptor passing
-- Supports `SCM_CREDENTIALS` for peer credential retrieval
-
-### Pipes
-
-Used for sequential data flow between processes:
-
-- Unidirectional (read end, write end)
-- Ring buffer implementation
-- Supports poll/select/epoll
-
-### Eventfd
-
-Used for event notification:
-
-- 64-bit counter
-- Semaphore mode (`EFD_SEMAPHORE`)
-- Integrates with poll/select/epoll
-
-## Server Protocols
-
-### mbus Protocol
-
-The message bus uses bragi-serialized messages for:
-
-- Device registration
-- Device discovery
-- Server capability queries
-
-### POSIX Subsystem Protocol
-
-The posix-subsystem communicates with the kernel via standard syscalls and with other servers via bragi-serialized IPC messages.
+Last reviewed: 2026-07-22
