@@ -13,4 +13,4 @@ build-dir = "book"
 [output.html]
 default-theme = "coal"
 preferred-dark-theme = "coal"
-#additional-css = ["./mdbook-admonish.css"]
+additional-css = ["./mdbook-kx.css"]

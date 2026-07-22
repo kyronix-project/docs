@@ -1,0 +1,330 @@
+/* ===== Kyronix Dark Theme for mdbook ===== */
+/* Adapted from style/styles.css */
+
+:root {
+  --bg-body: #111;
+  --bg-page: #1a1a1a;
+  --bg-nav: #222;
+  --bg-footer: #0d0d0d;
+  --bg-card: #222;
+  --bg-card-alt: #2a2a2a;
+  --bg-alert: #2a1a1a;
+  --bg-hover: #2a1a1a;
+  --bg-pre: #222;
+
+  --text-primary: #ccc;
+  --text-secondary: #999;
+  --text-muted: #666;
+  --text-muted2: #777;
+  --text-footer: #666;
+  --text-on-accent: #fff;
+  --text-on-dark: #ccc;
+
+  --accent: #e06c6e;
+  --accent-hover: #ce4e50;
+  --accent-yellow: #fdb604;
+  --accent-yellow-hover: #e0a000;
+
+  --border-page: #333;
+  --border-light: #333;
+  --border-mid: #444;
+  --border-nav: #333;
+  --border-news: #2a2a2a;
+
+  --sidebar-width: 280px;
+  --content-max-width: 900px;
+}
+
+/* ===== Root & Body ===== */
+
+html {
+  background: var(--bg-body);
+}
+
+body {
+  font-family: Verdana, "Bitstream Vera Sans", Geneva, Arial, sans-serif;
+  line-height: 1.6;
+  color: var(--text-primary);
+  background: var(--bg-page);
+}
+
+/* ===== Sidebar ===== */
+
+.sidebar {
+  background: var(--bg-nav);
+  border-right: 1px solid var(--border-nav);
+  color: var(--text-primary);
+}
+
+.sidebar .chapter li a {
+  color: var(--text-secondary);
+}
+
+.sidebar .chapter li a:hover {
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.sidebar .chapter li.active > a {
+  color: var(--accent);
+  font-weight: 700;
+  border-right: 3px solid var(--accent);
+}
+
+.sidebar .chapter .section-title {
+  color: var(--text-primary);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 12px;
+}
+
+.sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+  background: var(--border-mid);
+  border-radius: 3px;
+}
+
+/* ===== Header / Top bar ===== */
+
+.nav-wrapper {
+  background: var(--accent);
+  border-bottom: 4px solid #0d0d0d;
+}
+
+header.nav-wrapper {
+  background: var(--accent);
+}
+
+header .container {
+  max-width: var(--content-max-width);
+}
+
+header .logo {
+  color: var(--text-on-accent);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  text-shadow: 2px 2px 0 #000;
+}
+
+header a {
+  color: var(--text-on-accent);
+}
+
+#search.input {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-on-accent);
+  border-radius: 3px;
+}
+
+#search.input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* ===== Content area ===== */
+
+.content {
+  color: var(--text-primary);
+  background: var(--bg-page);
+  max-width: var(--content-max-width);
+  padding: 24px 32px 40px;
+}
+
+/* ===== Typography ===== */
+
+h1 {
+  font-size: 28px;
+  color: var(--accent);
+  margin-bottom: 12px;
+  border-bottom: none;
+}
+
+h2 {
+  font-size: 22px;
+  color: var(--accent);
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 5px;
+  margin: 22px 0 12px;
+}
+
+h3 {
+  font-size: 16px;
+  color: var(--text-primary);
+  margin-bottom: 5px;
+}
+
+h4 {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+p {
+  margin-bottom: 12px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text-primary);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+/* ===== Code ===== */
+
+code {
+  background: var(--bg-card-alt);
+  color: var(--text-primary);
+  padding: 1px 5px;
+  border: 1px solid var(--border-light);
+  border-radius: 2px;
+  font-size: 13px;
+}
+
+pre {
+  background: var(--bg-pre);
+  border: 1px solid var(--border-mid);
+  padding: 14px;
+  font-size: 13px;
+  margin-bottom: 16px;
+  overflow-x: auto;
+  color: var(--text-primary);
+  border-radius: 4px;
+}
+
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* ===== Tables ===== */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+th {
+  background: #0d0d0d;
+  color: var(--text-on-dark);
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-light);
+  vertical-align: top;
+}
+
+tr:hover td {
+  background: var(--bg-hover);
+}
+
+/* ===== Lists ===== */
+
+ul, ol {
+  margin-bottom: 12px;
+  padding-left: 24px;
+  font-size: 14px;
+}
+
+li {
+  margin-bottom: 4px;
+}
+
+/* ===== Blockquotes / Alerts ===== */
+
+blockquote {
+  background: var(--bg-alert);
+  border: 1px solid var(--accent);
+  border-left: 4px solid var(--accent);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+blockquote p {
+  margin-bottom: 0;
+}
+
+/* ===== Footnotes ===== */
+
+.footnote-reference {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.footnote-definition {
+  border-left: 3px solid var(--accent);
+  padding-left: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* ===== Navigation (prev/next) ===== */
+
+nav.footer {
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-nav);
+}
+
+nav.footer a {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+nav.footer a:hover {
+  color: var(--accent-hover);
+}
+
+/* ===== Scrollbar ===== */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-body);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-mid);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* ===== Print ===== */
+
+@media print {
+  .sidebar, nav.footer, header.nav-wrapper {
+    display: none !important;
+  }
+
+  .content {
+    max-width: 100%;
+    padding: 0;
+  }
+}
